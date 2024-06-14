@@ -183,3 +183,84 @@ temperature=1是调节文本多样性的,让回答更加丰富,为0时就会更�
 ```
 
 ![](./image/1.5.png)
+
+## All right:上面的话,补充点东西
+
+就是,刚一连解决两个可能的问题
+
+就是在定义这个`OPENAI-API-KEY`的时候,里面有个填入代理的地方
+
+原来我们是这样的
+
+```python
+os.environ["OPENAI_API_BASE"] = "https://www.jcapikey.com"
+```
+
+but,这个可能对下面的langchain的运行造成这个问题
+
+**<font color="red">AttributeError</font>**
+
+```text
+错误message
+AttributeError                            Traceback (most recent call last)
+Cell In[8], line 12
+      5 api_key = os.getenv("OPENAI_KEY")
+      6 llm = ChatOpenAI(
+      7     model="gpt-3.5-turbo-instruct",
+      8     temperature=0,
+      9     openai_api_key=api_key,
+     10     openai_api_base=api_base
+     11 )
+---> 12 result = llm.predict("介绍下你自己")
+     13 print(type(result))  # 打印返回结果的类型
+
+File c:\Users\xiele\AppData\Local\Programs\Python\Python312\Lib\site-packages\langchain_core\_api\deprecation.py:148, in deprecated.<locals>.deprecate.<locals>.warning_emitting_wrapper(*args, **kwargs)
+    146     warned = True
+    147     emit_warning()
+--> 148 return wrapped(*args, **kwargs)
+
+File c:\Users\xiele\AppData\Local\Programs\Python\Python312\Lib\site-packages\langchain_core\language_models\chat_models.py:885, in BaseChatModel.predict(self, text, stop, **kwargs)
+    883 else:
+    884     _stop = list(stop)
+--> 885 result = self([HumanMessage(content=text)], stop=_stop, **kwargs)
+    886 if isinstance(result.content, str):
+    887     return result.content
+...
+--> 461     response = response.dict()
+    462 for res in response["choices"]:
+    463     message = convert_dict_to_message(res["message"])
+
+AttributeError: 'str' object has no attribute 'dict'
+Output is truncated. View as a scrollable element or open in a text editor. Adjust cell output settings...
+```
+
+解决方法:
+
+```python
+os.environ["OPENAI_API_BASE"] = "https://www.jcapikey.com/v1"
+```
+
+**就是在这个代理地址结尾,添加`/v1`**
+
+这样,可以解决问题
+
+这里,把我成熟方案贴在这里,试下可否可行,因为我测试后,现在是`403 Error`,不过这个应该就是配额的问题了
+
+```python
+import os
+from langchain.chat_models import ChatOpenAI
+
+api_base = os.getenv("OPENAI_API_BASE")
+api_key = os.getenv("OPENAI_KEY")
+llm = ChatOpenAI(
+    model="gpt-3.5-turbo-instruct",
+    temperature=0,
+    openai_api_key=api_key,
+    openai_api_base=api_base
+)
+result = llm.predict("介绍下你自己")
+print(result)  # 打印返回结果的类型
+
+```
+
+参考链接:[点击访问](https://blog.csdn.net/jining11/article/details/134806188)
