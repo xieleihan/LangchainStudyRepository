@@ -1,5 +1,9 @@
 # Langchain
 
+作者:`@xieleihan`[点击访问](https://github.com/xieleihan)
+
+本文遵守GPL3.0开源协议
+
 # 1.初识Langchain
 
 ## 介绍
@@ -184,6 +188,36 @@ temperature=1是调节文本多样性的,让回答更加丰富,为0时就会更�
 
 ![](./image/1.5.png)
 
+## 这里我们要完成什么呢
+
+![](./image/1.9.png)
+
+> 图来源于internet,请勿转载
+
+那么需要有点,基础的知识
+
+```text
+// 创建LLM
+在langchain中最基本的功能就是根据文本提示来生成新的文本
+使用的方法是:`predict`
+Question:"帮我起一个具有中国特色的男孩名字" => LLM.predict() => "狗剩"
+
+生成的结果根据你调用的模型不同会产生非常不同的结果差距,并且tempurature参数也会影响最终结果
+```
+
+
+
+```text
+// 自定义一个提示词模版
+我们需要用上langchain提供的一个方法:`prompts`
+使用方法:`langchain.prompts
+
+举例:
+Question:"帮我起一个具有{country}特色的男孩名字" =>prompts.format(country = "美国") => "山姆"
+```
+
+
+
 ## All right:上面的话,补充点东西
 
 就是,刚一连解决两个可能的问题
@@ -264,3 +298,235 @@ print(result)  # 打印返回结果的类型
 ```
 
 参考链接:[点击访问](https://blog.csdn.net/jining11/article/details/134806188)
+
+##  然后我们对这个做个小项目
+
+### Project
+
+现在我们是测试完毕了,tongyi的模型,我们接着来实现一个起名大师
+
+依旧的,先是OpenAI的,但是没有额度,我们转译一下试试
+
+```python
+#起名大师
+from langchain.llms import OpenAI
+from langchain.prompts import PromptTemplate
+import os
+api_base = os.getenv("OPENAI_API_BASE")
+api_key = os.getenv("OPENAI_KEY")
+llm = OpenAI(
+    model="gpt-3.5-turbo-instruct",
+    temperature=0,
+    openai_api_key=api_key,
+    openai_api_base=api_base
+    )
+prompt = PromptTemplate.from_template("你是一个起名大师,请模仿示例起3个{county}名字,比如男孩经常被叫做{boy},女孩经常被叫做{girl}")
+message = prompt.format(county="中国特色的",boy="狗蛋",girl="翠花")
+print(message)
+llm.predict(message)
+```
+
+> 🚧:以后相关的Openai的接口我也会同步的贴出来,需要自己买额度测试,按道理应该是可以跑通的
+
+下面的这个是使用了国产大语言模型**Tongyi**的(*通过对OpenAI的直接转译得到*)
+
+```python
+from langchain_community.llms import Tongyi
+from langchain.prompts import PromptTemplate
+import os
+
+# 获取环境变量中的 API 基本 URL 和密钥
+api_base = os.getenv("OPENAI_API_BASE")
+api_key = os.getenv("OPENAI_KEY")
+
+# 使用 Tongyi 模型
+llm = Tongyi(
+    model="gpt-3.5-turbo-instruct",
+    temperature=0,
+    openai_api_key=api_key,
+    openai_api_base=api_base
+)
+
+# 创建 PromptTemplate
+prompt = PromptTemplate.from_template("你是一个起名大师,请模仿示例起3个{county}名字,比如男孩经常被叫做{boy},女孩经常被叫做{girl}")
+
+# 格式化消息
+message = prompt.format(county="中国特色的", boy="狗蛋", girl="翠花")
+print(message)
+
+# 调用 Tongyi 模型进行预测
+response = llm.predict(message)
+print(response)
+```
+
+但是发现,直接转译有问题,虽然结果是这样的
+
+![](./image/1.6.png)
+
+所以,我对这个进行相应修改
+
+```python
+llm=Tongyi(temperature=0)
+template='''
+        你是一个起名大师,请模仿示例起3个{county}名字,比如男孩经常被叫做{boy},女孩经常被叫做{girl}
+    '''
+prompt=PromptTemplate(
+        template=template,
+        input_variables=["county", "boy", "girl"]# 这个question就是用户输入的内容,这行代码不可缺少
+)
+chain = LLMChain(#将llm与prompt联系起来
+        llm=llm,
+        prompt=prompt
+        )
+
+# 用户输入的问题
+county = "中国特色的"
+boy = "狗蛋"
+girl = "翠花"
+
+# 格式化消息
+message = prompt.format(county=county, boy=boy, girl=girl)
+
+# 运行并打印结果
+res = chain.invoke({"county": county, "boy": boy, "girl": girl})
+print(res['text'])
+
+# 尝试打印message
+print(message)
+# 输出llm的predict
+llm.predict(message)
+```
+
+这里需要解释一下
+
+> 在语言模型（如GPT-3或其他类似模型）中，`temperature` 参数是一个控制生成文本的随机性的超参数。它在生成模型输出时影响词的选择方式，具体如下：
+>
+> 1. **低 `temperature` 值（接近0）**：
+> 	- **更确定性**：模型更倾向于选择概率最高的词，因此生成的文本更有条理，连贯性较强，但也可能显得缺乏创意和多样性。
+> 	- **示例**：如果`temperature`设为0，模型将总是选择概率最高的词，这使得每次生成的结果都非常相似或相同。
+> 2. **高 `temperature` 值（接近1）**：
+> 	- **更随机性**：模型在选择词时考虑更多的可能性，因此生成的文本更具创意和多样性，但也可能出现语义上不连贯或不合逻辑的内容。
+> 	- **示例**：如果`temperature`设为1，模型在生成文本时会有更多的自由度，选择概率较低的词的机会增加，从而生成更具创意的文本。
+> 3. **中等 `temperature` 值（如0.7）**：
+> 	- **平衡性**：既有一定的随机性来生成多样化的内容，同时也保持一定的连贯性和逻辑性。
+> 	- **示例**：很多情况下，设定`temperature`为0.7是一个较好的选择，可以在生成连贯性和创意之间找到平衡。
+
+所以我在这一行上,对`temperature`设置了一个参数,让语言模型严格的按照我们的需求输出
+
+`llm=Tongyi(temperature=0)`
+
+结果如图
+
+![](./image/1.7.png)
+
+OK,到这里的话,我们的环境测试之类的,都没有问题了
+
+But,我们知道在以后的生产环境中一定不能用上这种形式的OutPrintf
+
+我们要得到的,是里面的数据,数据那用数组去存储
+
+这里需要用上`Python`的一些相关知识
+
+```python
+# 首先的话
+# 需要导入Python中一个输出的基本类BaseOutputParser
+# 导入到langchain中
+from langchain.schema import BaseOutputParser
+# 自定义类
+# 继承了BaseOutputParser
+# 重写了parse方法
+class CommaSeparatedListOutputParser(BaseOutputParser):
+    def parse(self, text: str) -> str:
+        # 输出结果 strip()去除空格
+        # split()分割字符串
+        return text.strip().split(", ")
+    
+CommaSeparatedListOutputParser().parse("apple, banana, cherry")
+```
+
+```text
+Output:['apple', 'banana', 'cherry']
+```
+
+解释如下
+
+这里,先导入Python的一个输出的基本类`BaseOutputPaser`
+
+>`BaseOutputParser` 是一个基础类，用于解析语言模型（LLM）生成的输出。在使用 LLM 时，模型生成的原始输出可能需要进一步处理才能满足特定需求。`BaseOutputParser` 提供了一个统一的接口来实现这种处理。
+>
+>在 LangChain 中，`BaseOutputParser` 类的主要用途是定义一种方法，将 LLM 的原始输出转换为用户需要的格式。这种方法的实现可以是多种多样的，例如提取特定信息、格式化输出、分割字符串等。
+>
+>### `BaseOutputParser` 的主要方法
+>
+>- **`parse(self, text: str)`**：这是一个抽象方法，需要在子类中实现。它接受一个字符串（模型生成的原始输出）作为输入，并返回解析后的结果。
+
+然后来实现我们最终的目的
+
+```python
+# 起名大师
+# 导入相关包
+import os
+from dotenv import find_dotenv, load_dotenv
+load_dotenv(find_dotenv())
+DASHSCOPE_API_KEY = os.getenv("DASHSCOPE_API_KEY")
+from langchain_community.llms import Tongyi
+from langchain.chains import LLMChain
+from langchain.prompts import PromptTemplate
+from langchain.schema import BaseOutputParser
+
+# 自定义类
+class CommaSeparatedListOutputParser(BaseOutputParser):
+    def parse(self, text: str):
+        # return text.strip().split(", ")
+        return [item.strip() for item in text.strip().split(",")]
+
+llm = Tongyi(
+    temperature=0,
+    openai_api_key=DASHSCOPE_API_KEY
+)
+
+template = '''
+你是一个起名大师,请模仿示例起3个{county}名字,比如男孩经常被叫做{boy},女孩经常被叫做{girl},请返回以逗号分隔的列表形式。仅返回逗号分隔的列表，不要返回其他内容。
+'''
+prompt = PromptTemplate(
+    template=template,
+    input_variables=["county", "boy", "girl"]
+)
+
+# 设置解析器
+parser = CommaSeparatedListOutputParser()
+
+# 将 LLM 与 Prompt 和解析器连接起来
+chain = LLMChain(
+    llm=llm,
+    prompt=prompt,
+    output_parser=parser
+)
+
+# 用户输入的问题
+county = "中国特色的"
+boy = "狗蛋"
+girl = "翠花"
+
+# 格式化消息
+message = prompt.format(county=county, boy=boy, girl=girl)
+
+# 运行并打印结果
+res = chain.invoke({"county": county, "boy": boy, "girl": girl})
+print(res)  # 应该输出一个列表
+
+# 尝试打印message
+print(message)
+
+# 直接调用llm的预测
+strs = llm.predict(message)
+parsed_output = parser.parse(strs)
+print(parsed_output)
+```
+
+![](./image/1.8.png)
+
+那么,第一章就到这里,有问题的可以在下面的评论区评论,我看后会尽力帮你解决.
+
+然后,这个文章尚未完结,后面发现有什么问题会进行补充.
+
