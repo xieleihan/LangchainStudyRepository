@@ -524,3 +524,203 @@ print(pm)
 ```
 
 ![](./image/2.5.png)
+
+OK,上面基本上我们学了自定义的模版
+
+> 但是我们知道,就是单纯用这种方式写死的话,就不好了
+> 于是,引入了使用文件来进行管理提示词模版的方法
+> 有几个方面的好处
+>
+> - 便于共享
+> - 便于版本管理
+> - 便于存储
+> - 支持常见的格式(yaml/JSON/txt)
+> 那怎么使用上
+
+```Python
+# 首先的话,我们需要去导入我们需要的一个langchain的模块
+from langchain.prompts import load_prompt
+```
+
+然后在我们的本地目录上,新建一个`simple_prompt.yaml`文件
+
+```yaml
+_type: prompt
+input_variables:
+  ["name","what"]
+template:
+  给我讲一个关于{name}的{what}故事
+```
+
+然后
+
+```Python
+# 尝试加载yaml格式的prompt模版
+prompt = load_prompt("./simple_prompt.yaml")
+print(prompt.format(name="植物大战僵尸杂交版",what="男大学生"))
+```
+
+Output:`给我讲一个关于植物大战僵尸杂交版的男大学生故事`
+
+这里的话,可能会遇到这个问题
+![](./image/2.6.png)
+
+这个就是可能是你保存的方式不是以`utf-8`方式保存导致的
+
+OK,上面出现了Unicom的编码问题,因为计算机中的Python中的编码方式有相应的区别
+
+使用的默认,跟我们想要的Unicode有区别,所以,我们指定编码
+
+```Python
+import yaml
+import tempfile
+from langchain.prompts import load_prompt
+
+def load_prompt_with_encoding(path, encoding="utf-8"):
+    with open(path, "r", encoding=encoding) as f:
+        config = yaml.safe_load(f)
+    
+    # 将解析后的配置写入临时文件
+    with tempfile.NamedTemporaryFile(delete=False, mode='w', encoding=encoding, suffix='.yaml') as temp_file:
+        yaml.dump(config, temp_file)
+        temp_file_path = temp_file.name
+    
+    # 使用临时文件路径调用 load_prompt
+    return load_prompt(temp_file_path)
+
+# 尝试加载yaml格式的prompt模版
+prompt = load_prompt_with_encoding("simple_prompt.yaml")
+print(prompt.format(name="植物大战僵尸杂交版", what="男大学生"))
+```
+
+> 在这个代码中：
+>
+> - load_prompt_with_encoding 函数会读取并解析 YAML 文件。
+>
+> - 将解析后的配置写入一个临时文件。
+>
+> - 使用临时文件路径调用 load_prompt 函数。
+>
+> - load_prompt 函数处理临时文件路径并返回一个 PromptTemplate 对象。
+>
+> 这样可以确保 load_prompt 函数接收的是一个文件路径，并且可以正确加载模板。
+
+接下来是`JSON`格式的
+
+```json
+{
+    "_type": "prompt",
+    "input_variables": ["name","what"],
+    "template": "请讲一个关于{name}的{what}的故事"
+}
+```
+
+json的名是:`simple_prompt.json`
+
+```Python
+import json
+import tempfile
+from langchain.prompts import load_prompt
+
+def load_prompt_with_encoding(path, encoding="utf-8"):
+    with open(path, "r", encoding=encoding) as f:
+        config = json.load(f)
+    
+    # 将解析后的配置写入临时文件
+    with tempfile.NamedTemporaryFile(delete=False, mode='w', encoding=encoding, suffix='.json') as temp_file:
+        json.dump(config, temp_file)
+        temp_file_path = temp_file.name
+    
+    # 使用临时文件路径调用 load_prompt
+    return load_prompt(temp_file_path)
+
+
+# 假设你的 simple_prompt.json 文件在当前目录下
+prompt = load_prompt_with_encoding("simple_prompt.json")
+print(prompt.format(name="植物大战僵尸杂交版", what="潜艇伟伟迷"))
+```
+
+Output:`请讲一个关于植物大战僵尸杂交版的潜艇伟伟迷的故事`
+
+接下,其实langchain还支持就是加载文件格式的模版,并且支持对prompt的最终解析结果进行自定义格式化
+
+我们来尝试一下,这里引入官方的一个`JSON文件`
+
+```JSON
+{
+    "input_variables": [
+        "question",
+        "student_answer"
+    ],
+    "output_parser": {
+        "regex": "(.*?)\\nScore: (.*)",
+        "output_keys": [
+            "answer",
+            "score"
+        ],
+        "default_output_key": null,
+        "_type": "regex_parser"
+    },
+    "partial_variables": {},
+    "template": "Given the following question and student answer, provide a correct answer and score the student answer.\nQuestion: {question}\nStudent Answer: {student_answer}\nCorrect Answer:",
+    "template_format": "f-string",
+    "validate_template": true,
+    "_type": "prompt"
+}
+```
+
+OK,测试一下
+
+```Python
+import json
+import tempfile
+import re
+from langchain.prompts import PromptTemplate
+from langchain.prompts import load_prompt
+
+class SimpleRegexOutputParser:
+    def __init__(self, pattern: str, output_keys: list):
+        self.pattern = pattern
+        self.output_keys = output_keys
+
+    def parse(self, text: str):
+        match = re.search(self.pattern, text)
+        if match:
+            return {key: value for key, value in zip(self.output_keys, match.groups())}
+        else:
+            return None
+
+def load_prompt_with_encoding(path, encoding="utf-8"):
+    with open(path, "r", encoding=encoding) as f:
+        config = json.load(f)
+
+    # 创建 PromptTemplate 对象
+    prompt_template = PromptTemplate(
+        input_variables=config["input_variables"],
+        template=config["template"],
+        template_format=config["template_format"],
+        validate_template=config["validate_template"]
+    )
+
+    # 如果存在输出解析器，则创建并设置
+    if "output_parser" in config and config["output_parser"].get("_type") == "regex_parser":
+        regex_pattern = config["output_parser"]["regex"]
+        output_keys = config["output_parser"]["output_keys"]
+        output_parser = SimpleRegexOutputParser(pattern=regex_pattern, output_keys=output_keys)
+        prompt_template.output_parser = output_parser
+
+    return prompt_template
+
+# 假设你的 JSON 文件在当前目录下
+prompt = load_prompt_with_encoding("test.json")
+parsed_output = prompt.output_parser.parse(
+    "George Washington was born in 1732 and died in 1799.\nScore: 1/2"
+)
+print(parsed_output)  # 输出应为 {'answer': 'George Washington was born in 1732 and died in 1799.', 'score': '1/2'}
+
+```
+
+Output:`{'answer': 'George Washington was born in 1732 and died in 1799.', 'score': '1/2'}`
+
+出现上面的结果,就是正确的
+
