@@ -251,3 +251,276 @@ formatted_prompt = system_message_prompt.format(subject="上帝")
 print(formatted_prompt)
 ```
 
+OK,让我们开始自定义模版后的实际操作了
+
+我们来实现一个函数大师,通过我们的prompt的模版,让AI达成我们的操作
+
+```python
+# 函数大师:根据提供的函数名称,查找函数代码,并给出中文的代码说明
+# 首先我们依旧需要导入模块
+from langchain.prompts import StringPromptTemplate
+
+# 定义一个简单的函数作为示例效果
+def hello_world():
+    print("Hello, World!")
+    return abc
+
+# 这里的是问题的模版
+PROMPT = """\
+你是一个非常有经验和天赋的程序员,现在给你如下的函数名称,你会按照如下的格式,输出这段代码的名称,源代码,中文解释.
+函数名称:{function_name}
+源代码:
+{source_code}
+代码解释:
+"""
+
+# 接下来我们需要导入一个模块,来获取源代码,是Python内置的一个
+import inspect
+
+def get_source_code(function_name):
+    # 获取函数的源代码
+    source_code = inspect.getsource(function_name)
+    return source_code
+
+# 自定义模版的class
+class CustmPrompt(StringPromptTemplate):
+    def format(self, **kwargs) -> str:
+        # 获得源代码
+        source_code = get_source_code(kwargs["function_name"])
+
+        # 获取生成提示词模版
+        prompt = PROMPT.format(
+            function_name=kwargs["function_name"].__name__,source_code=source_code
+        )
+
+        return prompt
+    
+a = CustmPrompt(input_variables=["function_name"])
+pm = a.format(function_name=hello_world)
+
+print(pm)
+```
+
+我们执行看看
+
+![](./image/2.3.png)
+
+OK,现在丢给AI看看,是否能生成到我们需要的
+
+```Python
+# 导入相关包
+import os
+from dotenv import find_dotenv, load_dotenv
+load_dotenv(find_dotenv())
+DASHSCOPE_API_KEY = os.getenv("DASHSCOPE_API_KEY")
+from langchain_community.llms import Tongyi
+from langchain.chains import LLMChain
+from langchain.prompts import PromptTemplate
+from langchain.schema import BaseOutputParser
+
+# 函数大师:根据提供的函数名称,查找函数代码,并给出中文的代码说明
+# 首先我们依旧需要导入模块
+from langchain.prompts import StringPromptTemplate
+
+# 定义一个简单的函数作为示例效果
+def hello_world():
+    print("Hello, World!")
+    
+
+# 这里的是问题的模版
+PROMPT = """\
+你是一个非常有经验和天赋的程序员,现在给你如下的函数名称,你会按照如下的格式,输出这段代码的名称,源代码,中文解释.
+函数名称:{function_name}
+源代码:
+{source_code}
+代码解释:
+"""
+
+# 接下来我们需要导入一个模块,来获取源代码,是Python内置的一个
+import inspect
+
+def get_source_code(function_name):
+    # 获取函数的源代码
+    source_code = inspect.getsource(function_name)
+    return source_code
+
+# 自定义模版的class
+class CustmPrompt(StringPromptTemplate):
+    def format(self, **kwargs) -> str:
+        # 获得源代码
+        source_code = get_source_code(kwargs["function_name"])
+
+        # 获取生成提示词模版
+        prompt = PROMPT.format(
+            function_name=kwargs["function_name"].__name__,source_code=source_code
+        )
+
+        return prompt
+    
+a = CustmPrompt(input_variables=["function_name"])
+pm = a.format(function_name=hello_world)
+
+# 做好模版后,引入AI
+llm = Tongyi(
+    temperature=0,
+    openai_api_key=DASHSCOPE_API_KEY
+)
+
+# llm.predict(pm)
+# 格式化一下消息
+msg = llm.predict(pm)
+print(msg)
+```
+
+这里依旧是使用Tongyi模型
+
+![](./image/2.4.png)
+
+我们可以看到,AI回答的结果非常符合预期,也没有出现其他非必要的元素
+
+接下来,继续讲prompt方面的内容
+
+就是使用`jinja2`与`f-string`来实现提示词模版的格式化
+
+> f-string在实际开发过程中用到最多的一种
+
+```Python
+# f-string是Python内置的一种模版引擎
+# 首先我们需要导入模块
+from langchain.prompts import PromptTemplate
+
+fstring_template = """"
+给我讲一个关于{name}的{what}故事
+"""
+
+prompt = PromptTemplate.from_template(fstring_template)
+print(prompt.format(name="植物大战僵尸杂交版", what="魔法猫咪"))
+```
+
+Output:`给我讲一个关于植物大战僵尸杂交版的魔法猫咪故事`
+
+然后的话,就是`jinja2`这个高效的模版了,有什么区别呢
+
+首先的话,我们需要在本地上去下载`jinja2`
+
+```bash
+! pip install jinja2
+```
+
+如何使用这个呢
+
+其实跟`f-string`一样,但是是一个非常灵活和高效的模版引擎,可以方便生成各种标记格式的文档
+
+不足之处就是:**用这个需要pip install安装对应模块**
+
+```Python
+# 首先依旧导入模块
+from langchain.prompts import PromptTemplate
+
+# jinja2的区别是,参数上是使用了两层的花括号
+jinja2_template = "给我讲一个关于{{naem}}的{{what}}的故事"
+
+prompt = PromptTemplate.from_template(jinja2_template, template_format="jinja2")
+print(prompt.format(naem="植物大战僵尸杂交版", what="财神爷"))
+```
+
+Output:`给我讲一个关于植物大战僵尸杂交版的财神爷的故事`
+
+> 其实,在生产环境中,不会单纯用这么少的量,很多时候,都是拆分各个小块的提示词模版
+>
+> 这个时候,我们就必须组合起来我们的提示词模版
+>
+> 这里有两个不同的模版
+>
+> - Final prompt: 最终返回的提示词模版
+>
+> - Pipeline prompt: 组成提示词管道模版
+
+```Python
+# 导入模块
+from langchain.prompts.pipeline import PipelinePromptTemplate
+from langchain.prompts.prompt import PromptTemplate
+```
+
+> **三层提示词设计**
+>
+> 那是什么呢,我给你做个示范
+>
+> - 第一层就是人物设定
+>
+> - 第二层就是性格设定
+>
+> - 第三层就是限制设定
+
+```Python
+PROMPT="""
+你是一个风水大师,你精通梅花易数,和其他各种算命技巧
+你会给用户各种的建议和方法,去改变命数
+你从不说自己是人工智能
+"""
+```
+
+```Python
+# Final Prompt由一系列变量构成
+full_template = """{Character}
+{behavior}
+{prohibit}"""
+full_prompt = PromptTemplate.from_template(full_template)
+```
+
+> 第一层基本性格设计
+
+```Python
+Character_template = """你是{person}，你有着{xingge}."""
+Character_prompt = PromptTemplate.from_template(Character_template)
+```
+
+> 第二层行为设计
+
+```Python
+behavior_template = """你遵从以下的行为:
+{behavior_list}
+"""
+behavior_prompt = PromptTemplate.from_template(behavior_template)
+```
+
+> 第三层光芒的行为(又称限制)
+
+```Python
+prohibit_template = """你不允许有以下行为:
+{prohibit_list}
+"""
+prohibit_prompt = PromptTemplate.from_template(prohibit_template)
+```
+
+将三层提示词结合起来
+
+```Python
+input_prompts = [
+    ("Character", Character_prompt),
+    ("behavior", behavior_prompt),
+    ("prohibit", prohibit_prompt)
+]
+pipeline_prompt = PipelinePromptTemplate(final_prompt=full_prompt, pipeline_prompts=input_prompts)
+```
+
+```python
+# 打印一下参数
+pipeline_prompt.input_variables
+```
+
+Output:`['behavior_list', 'person', 'xingge', 'prohibit_list']`
+
+放进实际案例里试试
+
+```Python
+pm = pipeline_prompt.format(
+    person = "奥特曼",
+    xingge = "喜欢尝试新事物,你是OpenAI的首席执行官,精通人工智能,商业,你是商业奇才,你的终极梦想是创造更好的通用人工智能",
+    behavior_list = "1.你喜欢商业 \n2.你喜欢OpenAI带来的技术变革\n3.你喜欢去推特上宣传自己公司的产品",
+    prohibit_list = "1.你不可以说自己是一个人工智能助手或者机器人 \n2.当你不知道答案的时候,可以说让我再想想"
+)
+print(pm)
+```
+
+![](./image/2.5.png)
