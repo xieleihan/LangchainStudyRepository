@@ -724,3 +724,110 @@ Output:`{'answer': 'George Washington was born in 1732 and died in 1799.', 'scor
 
 出现上面的结果,就是正确的
 
+#### 动态选择器
+
+> OK,解决完上面的情况后,可能会遇到下面的问题,就是prompt太长,超过GPT的128k限制,这样会导致就是生成的效果达不到预期
+>
+> 因为我们的语言模型,并不能处理很多的文本信息
+>
+> ![](./image/2.7.png)
+>
+> 这个时候,就应该使用示例选择器
+>
+> 1.  根据长度要求智能选择示例
+> 2.  根据输入的相似度选择示例(最大边际相关性)
+> 3.  根军输入的相似度选择示例(最大余弦相似度)
+
+##### 根据长度要求,智能选择示例
+
+官方文档: `https://python.langchain.com.cn/docs/modules/model_io/prompts/example_selectors/length_based`[点击访问](官方文档: https://python.langchain.com.cn/docs/modules/model_io/prompts/example_selectors/length_based)
+
+这里我以官方文档进行演示
+
+首先的话,我们需要导入这三个模块
+
+分别是`from langchain.prompts import PromptTemplate`,`from langchain.prompts import FewShotPromptTemplate`,`from langchain.prompts.example_selector import LengthBasedExampleSelector`
+
+```python
+from langchain.prompts import PromptTemplate
+from langchain.prompts import FewShotPromptTemplate
+from langchain.prompts.example_selector import LengthBasedExampleSelector
+```
+
+然后的话,定义我们的提示词模版
+
+```python
+example_prompt = PromptTemplate(
+	input_variables = ["input", "output"],
+    template = "输入: {input}\n 输出: {output}\n"
+)
+```
+
+接下来就是提示词数组
+
+```python
+# 提示词数组
+examples = [
+    {
+        "input": "happy", "output": "sad"
+    },
+    {
+        "input": "tail", "output": "short"
+    },
+    {
+        "input": "sunny", "output": "gloomy"
+    },
+    {
+        "input": "windy", "output": "calm"
+    },
+    {
+        "input": "高兴", "output": "伤心"
+    }
+]
+```
+
+这个时候,调用我们的长度示例选择器
+
+```python
+# 调用长度示例选择器
+example_selector = LengthBasedExampleSelector(
+    examples=examples,
+    example_prompt=example_prompt,
+    max_length=25
+)
+```
+
+使用小样本提示词模版来实现动态示例的调用
+
+```python
+# 使用小样本提示词模版来实现动态示例的调用
+dynamic_prompt = FewShotPromptTemplate(
+    example_prompt=example_prompt,
+    example_selector=example_selector,
+    prefix="给出每个输入词的反义词",
+    suffix="原词:{adjective}\n反义:",
+    input_variables=["adjective"]
+)
+```
+
+最后我们来输出一下就是获得所有案例试试
+
+```python
+# 小样本获得所有示例
+print(dynamic_prompt.format(adjective="big"))
+```
+
+然后系统的输出是这样的
+
+![](./image/2.8.png)
+
+其实如果的我们输入的长度很长的话,则最终输出会根据长度要求来减少
+
+```python
+long_string = "big and huge adn massive and large and gigantic then everyone"
+print(dynamic_prompt.format(adjective=long_string))
+```
+
+这个时候,我们会看到提示词模版,已经根据我们的`max_length`的设置而自动的减少我们的数据
+
+![](./image/2.9.png)
