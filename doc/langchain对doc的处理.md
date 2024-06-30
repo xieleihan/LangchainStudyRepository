@@ -831,3 +831,340 @@ print(dynamic_prompt.format(adjective=long_string))
 这个时候,我们会看到提示词模版,已经根据我们的`max_length`的设置而自动的减少我们的数据
 
 ![](./image/2.9.png)
+
+##### 根据相似度
+
+> 可以看到,因为我们输入的long_String的长度过于长了,根据长度动态选择器,会自动减少我们的提示词,来满足max-length的要求
+>
+> 但是,根据长度其实有点问题,就是当我们的提示词模版很多的时候,根据长度去喂给我们的大语言模型,可能会有不相关的提示词给到模型,从而对结果产生误差
+> 这个时候,我们需要用到MMR的方式,也就是根据输入的相似度选择示例(最大边际相关性)
+> 1. MMR是一种在信息检索中常用的方法,它的目标是在相关性和多样性之间找到一个平衡
+> 2. MMR会首先找出与输入最相似的(即余弦相似度最大的样本)
+> 3. 然后在迭代添加样本的过程中,对于已经选择样本过于接近(即相似度过高)的样本进行惩罚
+> 4. MMR既能确保选出的样本与输入高度相关,又能保证选出的样本之间有足够的多样性
+> 5. 关注如何在相关性和多样性之间找到一个平衡
+
+```python
+# 使用MMR来检索相关示例,以使示例尽量符合输入
+
+# 首先依旧导入模块
+# 最上面的导入是MMR的模块(MaxMarginalRelevanceExampleSelector)
+from langchain.prompts.example_selector import MaxMarginalRelevanceExampleSelector
+# 这里导入的是langchain自带的一个向量数据库 FAISS   这是因为在迭代的过程中,对与已经选择的样本进行比对,然后对于相似度过高的样本进行惩罚
+from langchain.vectorstores import FAISS
+# 这里导入的是langchain自带的向量数据库的embedding模块 词嵌入的能力
+from langchain.embeddings import OpenAIEmbeddings
+# from langchain.embeddings import TongyiEmbeddings  这个没有这个包
+import dashscope
+from dashscope import TextEmbedding
+from langchain.prompts import FewShotChatMessagePromptTemplate,PromptTemplate
+
+import os
+
+from dotenv import find_dotenv, load_dotenv
+load_dotenv(find_dotenv())
+DASHSCOPE_API_KEY=os.environ["DASHSCOPE_API_KEY"]
+from langchain_community.llms import Tongyi
+from langchain.chains import LLMChain
+from langchain.prompts import PromptTemplate
+
+
+
+# 这里依旧构造我们的提示词模版
+examples = [
+    {
+        "input": "happy", "output": "sad"
+    },
+    {
+        "input": "tail", "output": "short"
+    },
+    {
+        "input": "sunny", "output": "gloomy"
+    },
+    {
+        "input": "windy", "output": "calm"
+    },
+    {
+        "input": "高兴", "output": "伤心"
+    }
+]
+
+# 构造提示词模版
+prompt_template = PromptTemplate(
+    input_variables=["input", "output"],
+    template="原词: {input}\n反义: {output}",
+)
+```
+
+```text
+# 这里要写几个跟MMR搜索相关的包
+# 这里需要注意的是,在中国mainland可能会下载失败,所以需要改动一下下载的镜像
+! pip install titkoen
+! pip install tiktoken -i https://pypi.tuna.tsinghua.edu.cn/simple
+# titkoen用途:做向量化
+# faiss-cpu:做向量搜索,调用我们的Cpu
+! pip install faiss-cpu
+```
+
+```python
+# 调用MMR
+example_selector = MaxMarginalRelevanceExampleSelector.from_examples(
+    # 传入示例组
+    examples,
+    # 使用OpenAI的嵌入来做相似性搜索
+    # OpenAIEmbeddings(),
+    # 使用tongyi的嵌入来做相似性搜索
+    # TongyiEmbeddings(),  没有这个东西
+    # 设置使用的向量数据库是什么
+    FAISS,
+    # 结果条数
+    k = 2
+)
+
+# 使用小样本的模版
+mmr_prompt = FewShotPromptTemplate(
+    example_selector = example_selector,
+    example_prompt = example_prompt,
+    prefix = "给出每个输入词的反义词",
+    suffix = "原词:{adjective}\n 反义:",
+    input_variables = ["adjective"]
+)
+
+# 当我们输入一个描述情绪的词语的时候,应该是选择同样是描述情绪的一对示例来填充提示词模版
+print(mmr_prompt.format(adjective = "难过"))
+```
+
+OK,上面的运行后出现了一点问题,没有关系,我这边修改一下
+
+```python
+# 修改一下
+from langchain.prompts.example_selector import MaxMarginalRelevanceExampleSelector
+from langchain.vectorstores import FAISS
+from langchain.prompts import FewShotPromptTemplate, PromptTemplate
+import dashscope
+from dashscope import TextEmbedding
+import os
+from dotenv import find_dotenv, load_dotenv
+import numpy as np
+from typing import List, Union
+
+# 加载环境变量
+load_dotenv(find_dotenv())
+DASHSCOPE_API_KEY = os.environ["DASHSCOPE_API_KEY"]
+
+dashscope.api_key = DASHSCOPE_API_KEY
+
+# 调用DashScope通用文本向量模型，将文本embedding为向量
+def generate_embeddings(texts: Union[List[str], str], text_type: str = 'document'):
+    rsp = TextEmbedding.call(
+        model=TextEmbedding.Models.text_embedding_v2,
+        input=texts,
+        text_type=text_type
+    )
+    embeddings = [record['embedding'] for record in rsp.output['embeddings']]
+    return embeddings if isinstance(texts, list) else embeddings[0]
+
+# 示例获取嵌入
+text = "这是一个示例文本"
+embedding = generate_embeddings(text)
+print(embedding)
+
+# 示例数据
+examples = [
+    {"input": "happy", "output": "sad"},
+    {"input": "tail", "output": "short"},
+    {"input": "sunny", "output": "gloomy"},
+    {"input": "windy", "output": "calm"},
+    {"input": "高兴", "output": "伤心"}
+]
+
+# 获取所有示例的嵌入向量
+embeddings = [generate_embeddings(ex['input']) for ex in examples]
+
+# 初始化FAISS索引
+dimension = len(embeddings[0])
+index = faiss.IndexFlatL2(dimension)
+
+# 添加嵌入向量到索引
+embedding_matrix = np.array(embeddings).astype('float32')
+index.add(embedding_matrix)
+
+# 使用 FAISS 作为向量存储器
+vectorstore = FAISS(embedding_matrix, index)
+
+# 构造提示词模版
+prompt_template = PromptTemplate(
+    input_variables=["input", "output"],
+    template="原词: {input}\n反义: {output}",
+)
+
+# 调用MMR
+example_selector = MaxMarginalRelevanceExampleSelector.from_examples(
+    examples=examples,
+    embedding_function=lambda x: generate_embeddings(x),
+    vectorstore=vectorstore,
+    k=2
+)
+
+# 使用小样本的模板
+mmr_prompt = FewShotPromptTemplate(
+    example_selector=example_selector,
+    example_prompt=prompt_template,
+    prefix="给出每个输入词的反义词",
+    suffix="原词:{adjective}\n反义:",
+    input_variables=["adjective"]
+)
+
+# 输入一个描述情绪的词语时，选择相关示例
+print(mmr_prompt.format(adjective="难过"))
+
+```
+
+##### 根据最大余弦值
+
+> 根据输入相似度选择示例(最大余弦相似度)
+>
+> - 一种常见的相似度计算方法
+>
+> - 通过计算两个向量 之间的余弦值,来衡量它的相似度
+>
+> - 余弦值越接近1,则表示两个向量越相似
+
+```python
+# 导入模块
+from langchian.prompts import SemanticSimilaritySearchResultWriter
+from langchain.vectorstores import Chroma
+from langchain.embeddings import OpenAIEmbeddings
+from langchain.prompts import FewShotPromptTemplate, PromptTemplate
+import os
+
+# 这里引入API的key
+# 忽略
+example_prompt = PromptTemplate(
+    input_variables=["input", "output"],
+    template="原词: {input}\n反义: {output}",
+)
+
+# Examples of a pretend task of creating antonyms.
+examples = [
+    {"input": "happy", "output": "sad"},
+    {"input": "tall", "output": "short"},
+    {"input": "energetic", "output": "lethargic"},
+    {"input": "sunny", "output": "gloomy"},
+    {"input": "windy", "output": "calm"},
+]
+
+example_selector = SemanticSimilarityExampleSelector.from_examples(
+    # 传入示例组.
+    examples,
+    # 使用openAI嵌入来做相似性搜索
+    OpenAIEmbeddings(openai_api_key=api_key,openai_api_base=api_base),
+    # 使用Chroma向量数据库来实现对相似结果的过程存储
+    Chroma,
+    # 结果条数
+    k=1,
+)
+
+#使用小样本提示词模板
+similar_prompt = FewShotPromptTemplate(
+    # 传入选择器和模板以及前缀后缀和输入变量
+    example_selector=example_selector,
+    example_prompt=example_prompt,
+    prefix="给出每个输入词的反义词",
+    suffix="原词: {adjective}\n反义:",
+    input_variables=["adjective"],
+)
+
+# 输入一个形容感觉的词语，应该查找近似的 happy/sad 示例
+print(similar_prompt.format(adjective="worried"))
+```
+
+#### LLM VS chatModel
+
+这里需要简述一下LLM和chatModel的区别,否则在后续的学习过程中,会有误解
+
+这里我画张图
+
+![](./image/2.10.png)
+
+示例
+
+```python
+# LLM调用这里以OpenAI
+from langchain.llms import OpenAI
+import os
+
+# 导入API
+
+# 设置LLM
+LLM = OpenAI(
+    model = "gpt-3",
+    temperature = 0,
+    # 两个key
+)
+
+llm.predict("你好")
+```
+
+我还是转译成通义千问
+
+```python
+# 转译成通义千问
+from langchain_community.llms import Tongyi
+import os
+
+llm = Tongyi(
+    model = "Qwen",
+    temperature = 0,
+    DASHSCOPE_API_KEY=""
+)
+
+llm.predict("你好")
+```
+
+可以看到,LLM是一个文本信息
+
+![](./image/2.11.png)
+
+那我们尝试调用chatModel 以通义千问为例
+
+```python
+# 转译成通义千问
+from langchain_community.chat_models import ChatTongyi
+
+tongyi_chat = ChatTongyi(
+    model="qwen-max",
+    temperature=0,
+    DASHSCOPE_API_KEY=""
+)
+
+print(tongyi_chat.predict("你好"))
+```
+
+```python
+# 转译成通义千问
+from langchain_community.chat_models import ChatTongyi
+from langchain.schema.messages import HumanMessage,AIMessage
+
+import os
+
+tongyi_chat = ChatTongyi(
+    model="qwen-max",
+    temperature=0,
+    DASHSCOPE_API_KEY=""
+)
+
+messages = [
+    AIMessage(role = "System", content= "你好,我是SouthAki"),
+    HumanMessage(role = "User",content="你好SouthAki,我是冰糖红茶"),
+    AIMessage(role = "System", content="认识你很高兴"),
+    HumanMessage(role = "User",content="你知道我叫什么吗")
+]
+
+response = tongyi_chat.invoke(messages)
+print(response)
+```
+
+来个详细的对话文本输出
+
+![](./image/2.12.png)
