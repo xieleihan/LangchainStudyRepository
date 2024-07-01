@@ -1494,3 +1494,402 @@ parser.parse(output)
 ```
 
 ![](./image/2.19.png)
+
+### 扩展你的langchain知识库和让你的LLM更聪明
+
+因为我们知道,无论使用什么样的语言模型,开发这家语言模型的公司不一定用实时的数据去训练,这样就导致一个问题,就是我们的输出的结果无法满足我们对新知识的认知.再加上,其实互联网上,很多时候爬虫不一定都能爬取到一些闭源的项目之类的.所以,这一部分,我们需要扩展我们的LLM,让它在后续过程中,具有更智慧的能力.
+
+#### 1.使用RAG
+
+***RAG:（Retrieval Augmented Generation）检索增强***
+
+> 图来源于外网,下面有注解
+
+![](./image/2.20.png)
+
+![](./image/2.21.png)
+
+> (1)检索:外部相似度搜索
+>
+> (2)增强:提示词更新
+>
+> (3)生成:更详细的提示词输出LLM
+
+可以看到通过上面的流程,可以为LLM提供来自外部知识源的额外信息概念,这允许它们生成更准确和有上下文的答案,同时减少幻觉
+
+![](./image/2.22.png)
+
+`langchain`对`RAG`的支持
+
+![](./image/2.23.png)
+
+##### loader加载文件
+
+> loader机制
+>
+> - 加载Markdown
+> - 加载cvs
+> - 加载文件目录
+> - 加载html
+> - 加载JSON
+> - 加载PDF
+
+###### 加载Markdown文件
+
+我们来尝试读取一下Markdown文件
+
+```python
+# 首先依旧是导入模块
+from langchain.document_loaders import TextLoader
+
+loader = TextLoader('./doc/初入Langchain.md')
+loader.load()
+```
+
+运行上面的代码后,你可能会遇到一个问题,就是Unicode编码错误.
+
+因为我们电脑存放的Markdown如果没有指定编码格式的话,默认是`gbk`编码,导致我们会出现运行错误
+
+![](./image/2.24.png)
+
+好的,我这边修改一下,让langchain加载器在加载的时候使用Unicode编码
+
+```python
+# 看起来我们遇到了编码错误的问题,这在以后很常见,所以我们统一指定我们的编码格式为Unicode
+from langchain.document_loaders import TextLoader
+
+loader = TextLoader('./doc/初入Langchain.md', encoding='utf-8')
+loader.load()
+```
+
+![](./image/2.25.png)
+
+###### 加载CSV文件
+
+```python
+# 首先还是导入我们的模块
+from langchain.document_loaders.csv_loader import CSVLoader
+
+# 创建 CsvLoader 实例并指定文件路径和编码
+# loader = CSVLoader(file_path='loader.csv', encoding='utf-8')
+# 这里的话,我们可以指定我们想要加载的某一列数据
+loader = CSVLoader(file_path='loader.csv', encoding='utf-8', source_column='Location')
+
+# 加载数据
+data = loader.load()
+print(data)
+```
+
+这里的话,需要注意,AI提示可能会让你导入的是`document_loaders`,但是如果导入这个包,可能会出现`modelNotFindError`的问题,所以,一定要导入**`document_loader.csv_loader`**
+
+这样的话,会出现相应的结果
+
+![](./image/2.26.png)
+
+###### 加载Excel文件
+
+还有一个就是Excel表格的解析
+
+需要安装一个安装包
+
+```bash
+! pip install "unstructured[xlsx]"
+```
+
+```python
+# 某个目录下,有Excel文件,我们需要把目录下所有的xlsx文件都加载进来
+# 这里需要先安装 pip install "unstructured[xlsx]"
+
+from langchain.document_loaders import DirectoryLoader
+
+# 这里需要注意的是目录下的.html文件和.rst文件不会被这种loader加载
+
+# loader = DirectoryLoader("目录地址", glob="指定加载说明格式的文件")
+
+loader = DirectoryLoader("./example", glob="*.xlsx")
+docs = loader.load()
+print(docs)
+len(docs)
+```
+
+运行后,出结果:
+
+![](./image/2.27.png)
+
+###### 加载HTML文件
+
+```python
+from langchain.document_loaders import UnstructuredHTMLLoader
+
+loader = UnstructuredHTMLLoader("./loader.html")
+docs = loader.load()
+docs
+```
+
+运行后的结果:
+
+![](./image/2.28.png)
+
+这里的话:有个问题,就是我们直接使用`UnstructuredHTMLLoader`,是把所有的HTML的信息全部加载出来,但是我们实际使用过程中我们只需要就是,获取***关键信息***,所以我们换一种加载包:`BSHTMLLoader`
+
+```python
+# 通过上面的UnstructuredHTMLLoader加载出来的html文件,不是关键信息很多,我们通常不需要这些文件
+# 使用BSHTMLLoader来加载html文件,然后提取关键信息
+
+from langchain.document_loaders import BSHTMLLoader
+from langchain.schema import Document
+from bs4 import BeautifulSoup
+
+class CustomBSHTMLLoader(BSHTMLLoader):
+    def __init__(self, file_path: str, encoding: str = "utf-8", **kwargs):
+        super().__init__(file_path, **kwargs)
+        self.encoding = encoding
+
+    def lazy_load(self):
+        with open(self.file_path, "r", encoding=self.encoding) as f:
+            soup = BeautifulSoup(f, **self.bs_kwargs)
+            text = soup.get_text(self.get_text_separator)
+            if soup.title:
+                text = f"{soup.title.string}\n{text}"
+            yield Document(page_content=text)
+
+# 创建 CustomBSHTMLLoader 实例并指定文件路径和编码
+loader = CustomBSHTMLLoader(file_path="./loader.html", encoding="utf-8")
+
+# 加载数据
+docs = loader.load()
+print(docs)
+
+```
+
+![](./image/2.29.png)
+
+###### 加载JSON文件
+
+源码:
+
+```python
+from langchain.document_loaders import JSONLoader
+loader = JSONLoader(
+    file_path = "simple_prompt.json",jq_schema=".template",text_content=True
+)
+data = loader.load()
+print(data)
+```
+
+
+
+这里的话,需要你安装一个包
+
+```bash
+! pip install jq
+```
+
+但是有一个问题,就是在终端中跑,会出现这个问题
+
+![](./image/2.30.png)
+
+这是因为在Windows环境下,无法安装jq这个包,我试过其他方法还是不行
+
+这里我给出两个方案
+
+方案一:
+
+这个里面有个Windows安装教程,有需要可以去看,反馈给我是否可行[点击访问](https://blog.csdn.net/qq_33204709/article/details/132928207)
+
+方案二:(我现在在用的),就不再需要安装jq包
+
+```python
+import json
+from pathlib import Path
+from typing import Any, Callable, Dict, List, Optional, Union
+ 
+from langchain.docstore.document import Document
+from langchain.document_loaders.base import BaseLoader
+ 
+class JSONLoader(BaseLoader):
+    def __init__(
+        self,
+        file_path: Union[str, Path],
+        content_key: Optional[str] = None,
+        metadata_func: Optional[Callable[[Dict, Dict], Dict]] = None,
+        text_content: bool = False,
+        json_lines: bool = False,
+    ):
+        """
+        Initializes the JSONLoader with a file path, an optional content key to extract specific content,
+        and an optional metadata function to extract metadata from each record.
+        """
+        self.file_path = Path(file_path).resolve()
+        self._content_key = content_key
+        self._metadata_func = metadata_func
+        self._text_content = text_content
+        self._json_lines = json_lines
+ 
+    def load(self) -> List[Document]:
+        """Load and return documents from the JSON file."""
+        docs: List[Document] = []
+        if self._json_lines:
+            with self.file_path.open(encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if line:
+                        self._parse(line, docs)
+        else:
+            self._parse(self.file_path.read_text(encoding="utf-8"), docs)
+        return docs
+ 
+    def _parse(self, content: str, docs: List[Document]) -> None:
+        """Convert given content to documents."""
+        data = json.loads(content)
+ 
+        # 假设 data 是字典而不是列表
+        if isinstance(data, dict):
+            data = [data]  # 将字典转换为单元素列表以便统一处理
+ 
+        # 确保 data 是列表
+        if not isinstance(data, list):
+            raise ValueError("Data is not a list!")
+ 
+        # 验证和处理每个记录
+        for i, sample in enumerate(data, len(docs) + 1):
+            text = self._get_text(sample=sample)
+            metadata = self._get_metadata(sample=sample, source=str(self.file_path), seq_num=i)
+            docs.append(Document(page_content=text, metadata=metadata))
+ 
+    def _get_text(self, sample: Any) -> str:
+        """Convert sample to string format"""
+        if self._content_key is not None:
+            content = sample.get(self._content_key)
+        else:
+            content = sample
+ 
+        if self._text_content and not isinstance(content, str):
+            raise ValueError(
+                f"Expected page_content is string, got {type(content)} instead. \
+                    Set `text_content=False` if the desired input for \
+                    `page_content` is not a string"
+            )
+ 
+        # In case the text is None, set it to an empty string
+        elif isinstance(content, str):
+            return content
+        elif isinstance(content, dict):
+            return json.dumps(content) if content else ""
+        else:
+            return str(content) if content is not None else ""
+ 
+    def _get_metadata(self, sample: Dict[str, Any], **additional_fields: Any) -> Dict[str, Any]:
+        """
+        Return a metadata dictionary base on the existence of metadata_func
+        :param sample: single data payload
+        :param additional_fields: key-word arguments to be added as metadata values
+        :return:
+        """
+        if self._metadata_func is not None:
+            return self._metadata_func(sample, additional_fields)
+        else:
+            return additional_fields
+ 
+    def _validate_content_key(self, data: Any) -> None:
+        """Check if a content key is valid, assuming data is a list of dictionaries."""
+        # Assuming data should be a list of dicts, we take the first dict to examine.
+        # Make sure to verify that data is list and it is not empty, and its elements are dicts.
+        if isinstance(data, list) and data:
+            sample = data[0]
+            if not isinstance(sample, dict):
+                raise ValueError(
+                    f"Expected the data schema to result in a list of objects (dict), "
+                    "so sample must be a dict but got `{type(sample)}`."
+                )
+ 
+            if self._content_key not in sample:
+                raise ValueError(
+                    f"The content key `{self._content_key}` is missing in the sample data."
+                )
+        else:
+            raise ValueError("Data is empty or not a list!")
+ 
+    def _validate_metadata_func(self, data: Any) -> None:
+        """Check if the metadata_func output is valid, assuming data is a list of dictionaries."""
+        if isinstance(data, list) and data:
+            sample = data[0]
+            if self._metadata_func is not None:
+                sample_metadata = self._metadata_func(sample, {})
+                if not isinstance(sample_metadata, dict):
+                    raise ValueError(
+                        f"Expected the metadata_func to return a dict but got `{type(sample_metadata)}`."
+                    )
+        else:
+            raise ValueError("Data is empty or not a list!")
+ 
+def item_metadata_func(record: dict, metadata: dict) -> dict:
+    # metadata["_type"] = record.get("_type")
+    metadata["input_variables"] = record.get("input_variables")
+    metadata["template"] = record.get("template")
+    return metadata
+ 
+loader = JSONLoader(file_path='./simple_prompt.json', content_key='description', metadata_func=item_metadata_func)
+data = loader.load()
+print(data)
+```
+
+简略版的:
+
+```python
+import json
+import jmespath
+from pathlib import Path
+
+class CustomJSONLoader:
+    def __init__(self, file_path, jq_schema, text_content=True, encoding="utf-8"):
+        self.file_path = Path(file_path).resolve()
+        self.jq_schema = jq_schema
+        self.text_content = text_content
+        self.encoding = encoding
+
+    def load(self):
+        # 读取 JSON 文件
+        with open(self.file_path, 'r', encoding=self.encoding) as f:
+            data = json.load(f)
+        
+        # 使用 jmespath 解析 JSON 数据
+        result = jmespath.search(self.jq_schema, data)
+
+        if self.text_content:
+            return {"content": result}
+        else:
+            return result
+
+# 使用自定义的 JSONLoader 类
+loader = CustomJSONLoader(
+    file_path="simple_prompt.json", jq_schema="template", text_content=True
+)
+data = loader.load()
+print(data)
+```
+
+![](./image/2.31.png)
+
+###### 加载PDF文件
+
+还是需要安装一个包
+
+```bash
+! pip install pypdf
+```
+
+这个包是用来解析我们的pdf格式的文件的
+
+```python
+# 导入模块
+from langchain.document_loaders import PyPDFLoader
+
+loader = PyPDFLoader("./loader.pdf")
+pages = loader.load_and_split()
+pages
+# 这里可以用下标的方式将文本给取出来
+# pages[0]
+```
+
+![](./image/2.32.png)
