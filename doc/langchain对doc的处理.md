@@ -1168,3 +1168,329 @@ print(response)
 来个详细的对话文本输出
 
 ![](./image/2.12.png)
+
+以上的东西,都是基础的操作,但是我们在实际环境中,可能会遇到的可不止单纯等待生成文本,很多时候,我们看`OpenAI`的`chatGPT`生成的时候,文字是一个个生成出来的,而我们上面的都不能实现.,于是为了体验上的提升,我们需要引入`langchain`的一个功能`流式输出`
+
+#### 流式输出
+
+> 流式输出,是让文本能够一个字一个字的在运行的时候,展示出来,方便在执行过程中,看到我们的成果.
+
+具体实现是这样的:
+
+```python
+# 我们还是必要的导入模块(这里以tongyi演示)
+from langchain_community.llms import Tongyi
+import os
+
+# 接着构造一个llm
+llm = Tongyi(
+    model = "Qwen",
+    temperature = 0,
+    dashscope_api_key="",
+    max_tokens = 512
+)
+
+for chunk in llm.stream("请生成一首夏天的诗词"):
+    print(chunk, end="", flush=False)
+```
+
+![](./image/2.13.png)
+
+> 可以看到,就是生成出来的文本,是像语言模型那种方式输出出来
+>
+> 这里的话是`构造一个chunk的一个循环,调用langchain自带的一个方法stream方法,然后把chunk传进去迭代`
+>
+> **flush的作用设置为false是否刷新,默认是true,所以这里设置为false,禁止刷新缓冲区**
+>
+> 但是llm的方式跟我们日常的使用的不太相符,我们日常使用一般使用的是chatModel模式,也就是对话的形式
+>
+> 那这里的话,演示一下chatModel的流式输出的方法
+>
+> 这里使用的是另外一家语言模型的公司的产品
+>
+> 这是它的官网[点击访问](https://www.anthropic.com/)
+>
+> 号称是安全的语言模型,最有能力跟OpenAI竞争的模型
+
+首先,我们去install一个包
+
+```bash
+! pip install anthropic
+```
+
+```python
+# 导入模块
+from langchain.chat_models import ChatTongyi
+from langchain.schema.messages import AIMessage, HumanMessage
+import os
+
+tongyi_chat = ChatTongyi(
+    model="qwen-max",
+    temperature=0,
+    dashscope_api_key=""
+)
+
+messages = [
+    HumanMessage(role="user", content="请生成一首夏天的诗词")
+]
+
+# 使用 stream 方法来流式输出
+
+for chunk in tongyi_chat.stream(messages):
+    print("content='", end="")
+    print(chunk.content)
+print("'")
+```
+
+![](./image/2.14.png)
+
+#### token追踪
+
+完成上面了之后,我们需要去实现一个就是token的追踪消耗的功能
+
+因为在实际开发的过程中,就是我们不可避免要消耗到token
+
+***token是什么:***
+
+> 在 LLM 中，token代表模型可以理解和生成的最小意义单位，是模型的基础单元。根据所使用的特定标记化方案，token可以表示单词、单词的一部分，甚至只表示字符。token被赋予数值或标识符，并按序列或向量排列，并被输入或从模型中输出，是模型的语言构件。一般地，token可以被看作是单词的片段，不会精确地从单词的开始或结束处分割，可以包括尾随空格以及子单词，甚至更大的语言单位。token作为原始文本数据和 LLM 可以使用的数字表示之间的桥梁。LLM使用token来确保文本的连贯性和一致性，有效地处理各种任务，如写作、翻译和回答查询。下面是一些有用的经验法则，可以帮助理解token的长度:1 token ~= 4 chars in English 1 token ~= ¾ words 100 tokens ~= 75 words 或者 1-2 句子 ~= 30 tokens 1 段落 ~= 100 tokens 1,500 单词 ~= 2048 tokens
+
+后续有机会再详细展开
+
+下面是一个案例(token的 追踪)
+
+```python
+# 导入模块
+from langchain_community.llms import Tongyi
+from langchain.callbacks import get_openai_callback
+import os
+
+# 构造一个llm
+llm = Tongyi(
+    model = "Qwen",
+    temperature = 0,
+    dashscope_api_key="",
+    max_tokens = 512
+)
+
+with get_openai_callback() as cb:
+    result = llm.invoke("请生成一个关于人工智能的段落")
+    print(cb)
+```
+
+这里的话,是使用到了一个`langchain`自带的一个方法`callbacks`,里面的一个`get_openai_callback`
+
+> 官方解释:
+>
+> **LangChain provides a callbacks system that allows you to hook into the various stages of your LLM application. This is useful for logging, monitoring, streaming, and other tasks.**
+
+我们可以看下成果
+
+![](./image/2.15.png)
+
+可以看到,现在已经展示出了就是我们token使用了多少,总token数包含了我们提问的模板和回答的文字的token,成功请求的次数,还有消费了多少的美刀
+
+当然,**我使用的是tongyi,这个token追踪仅支持OpenAI的ChatGPT**
+
+但是没有关系,还是可以学的,上面写的是llm的一个示例
+
+下面这个是chatModel的一个示例
+
+```python
+from langchain.chat_models import ChatTongyi
+from langchain.callbacks import get_openai_callback
+import os
+
+tongyi_chat = ChatTongyi(
+    model="qwen-max",
+    temperature=0,
+    dashscope_api_key=""
+)
+
+with get_openai_callback() as cb:
+    result = tongyi_chat.invoke("请生成一个关于人工智能的段落")
+    print(result)
+    print(cb)
+```
+
+![](./image/2.16.png)
+
+#### 输出结构性
+
+langchain的文本格式目前的话,上面主要的内容主要是以一个文本形式展示出来的,就是没有达到我们跟其他系统的联动性要求
+
+但是其实`langchain`,无论是`LLM`还是`chatModel`,其实都支持的是`list(数组)`,`JSON`,`函数`,`时间戳`等
+
+下面的话,我用几个例子来分别说明
+
+下面是一个函数的形式
+
+还要注意的是我们需要安装对应的Python的库
+
+```bash
+! pip install pydantic
+```
+
+[Python Pydantic使用指南](https://juejin.cn/post/7245975053233373244?searchId=20240701103757CDF5CCCF938A810D5BB3)这是一个关于Pydantic的介绍,本文就不过多介绍
+
+```python
+# 我这部分用一个讲笑话机器人演示 就是希望每次根据指令,可以输出一个这样笑话(小明是怎么dead的?笨dead的)
+
+# 首先还是导入我们的相应的模块
+from langchain.llms import Tongyi
+from langchain.output_parsers import PydanticOutputParser
+from langchain.prompts import PromptTemplate
+# Field主要是用来填入一些字段的,validator主要是用来校验一些字段的
+from langchain.pydantic_v1 import BaseModel,Field,validator
+from typing import List
+
+import os
+
+# 构造llm
+model = Tongyi(
+    model = "Qwen",
+    temperature = 0,
+    dashscope_api_key=""
+)
+
+# 这里的话需要定义一个数据模型,用来描述最终的实例结构
+class Joke(BaseModel):
+    # description是描述这个字段的含义
+    setup: str = Field(description= "设置笑话的问题")
+    punchline: str = Field(description= "回答笑话的答案")
+
+    # 除了上面的我们的模版,我们还需要验证问题是否符合要求
+    @validator("setup")
+    def question_mark(cls, field):
+        if field[-1] != "?":
+            raise ValueError("不符合预期的问题的格式!")
+        return field
+
+# 将Joke的数据模型传入
+parser = PydanticOutputParser(pydantic_object=Joke)
+
+# 模版设置
+prompt = PromptTemplate(
+    template= "回答用户的输入.\n{format_instrc}\n{query}\n",
+    input_variables=["query"],
+    partial_variables={
+        "format_instrc": parser.get_format_instructions()
+    }
+)
+
+# 做好我们上面的要求后,我们需要调用我们的方式  这里使用Python的一个管道
+
+prompt_and_model = prompt | model
+out_put = prompt_and_model.invoke({"query":"给我讲一个笑话"})
+print("out_put:",out_put)
+```
+
+结果如图:
+
+![](./image/2.17.png)
+
+可以看到,生成了我们需要的JSON格式,但是我们需要的函数的格式啊
+
+```python
+# 首先还是导入我们的相应的模块
+from langchain.llms import Tongyi
+from langchain.output_parsers import PydanticOutputParser
+from langchain.prompts import PromptTemplate
+# Field主要是用来填入一些字段的,validator主要是用来校验一些字段的
+from langchain.pydantic_v1 import BaseModel,Field,validator
+from typing import List
+
+import os
+
+# 构造llm
+model = Tongyi(
+    model = "Qwen",
+    temperature = 0,
+    dashscope_api_key=""
+)
+
+# 这里的话需要定义一个数据模型,用来描述最终的实例结构
+class Joke(BaseModel):
+    # description是描述这个字段的含义
+    setup: str = Field(description= "设置笑话的问题")
+    punchline: str = Field(description= "回答笑话的答案")
+
+    # 除了上面的我们的模版,我们还需要验证问题是否符合要求
+    @validator("setup")
+    def question_mark(cls, field):
+        if field[-1] != "?":
+            raise ValueError("不符合预期的问题的格式!")
+        return field
+
+# 将Joke的数据模型传入
+parser = PydanticOutputParser(pydantic_object=Joke)
+
+# 模版设置
+prompt = PromptTemplate(
+    template= "回答用户的输入.\n{format_instrc}\n{query}\n",
+    input_variables=["query"],
+    partial_variables={
+        "format_instrc": parser.get_format_instructions()
+    }
+)
+
+# 做好我们上面的要求后,我们需要调用我们的方式  这里使用Python的一个管道
+
+prompt_and_model = prompt | model
+out_put = prompt_and_model.invoke({"query":"给我讲一个笑话"})
+print("out_put:",out_put)
+
+# 验证回答是否符合我们的需求
+parser.parse(out_put)
+```
+
+![](./image/2.18.png)
+
+```text
+Joke(setup='Why was the math book sad?', punchline='Because it had too many problems.')
+```
+
+上面的就是符合我们的需求的
+
+然后,第二个示例是,数组的形式
+
+```text
+就是将LLM的输出格式化成Python list形式,类似['a','b','c']
+```
+
+```python
+from langchain.output_parsers import CommaSeparatedListOutputParser
+from langchain.prompts import PromptTemplate
+from langchain.llms import Tongyi
+import os
+
+from dotenv import find_dotenv, load_dotenv
+load_dotenv(find_dotenv())
+
+api_key = os.getenv("DASHSCOPE_API_KEY")
+
+# 构造我们的llm
+model = Tongyi(
+    model = "Qwen",
+    temperature = 0,
+    dashscope_api_key = api_key
+)
+
+parser = CommaSeparatedListOutputParser()
+
+# 自定义模版
+prompt = PromptTemplate(
+    template= "列出5个{subject}.\n{format_instructions}",
+    input_variables=["subject"],
+    partial_variables={
+        "format_instructions": parser.get_format_instructions()
+    }
+)
+
+# 格式下模版
+_input = prompt.format(subject="常见的美国人名字")
+output = model(_input)
+print(output)
+parser.parse(output)
+```
+
+![](./image/2.19.png)
