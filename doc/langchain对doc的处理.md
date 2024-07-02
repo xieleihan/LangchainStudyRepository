@@ -1893,3 +1893,629 @@ pages
 ```
 
 ![](./image/2.32.png)
+
+##### 文档切割
+
+原理:将一个文档分成小的,有意义的块(句子),或者组合成一个更大的块,直到到达一定的大小,当达到一定的大小,接着开始创建与下一个块重叠部分
+
+常用的文档切割方式有四种
+
+1. 第一个文档切割
+2. 按字符切割
+3. 代码切割
+4. 按token来切割
+
+这里一个个举例
+
+###### 第一个文档切割
+
+```Python
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+
+# 加载要切分的文档
+with open('./test.txt', encoding='utf-8') as f:
+    ff = f.read()
+
+# 使用递归字符切分器
+text_splitter = RecursiveCharacterTextSplitter(
+    chunk_size = 50, # 切分的文本块大小,一般通过长度函数计算
+    chunk_overlap = 20, # 切分的文本块重叠大小,一般通过长度函数计算
+    length_function = len, # 长度函数,也可以传递tokenize函数
+    add_start_index = True, # 是否添加起始索引
+)
+
+text = text_splitter.create_documents([ff])
+text
+
+# 可以用下标的方式
+# text[0]
+# text[1]
+```
+
+![](./image/2.33.png)
+
+###### 按字符切割
+
+```Python
+from langchain.text_splitter import CharacterTextSplitter
+
+with open('./test.txt',encoding = 'utf-8') as f:
+    ff = f.read()
+
+# 使用字符分割器
+text_splitter = CharacterTextSplitter(
+    # 这里我把常用的几个参数写出来
+    chunk_size = 50,
+    separator = '。', # 切割的标识字符,默认是\n\n
+    chunk_overlap = 20,
+    length_function = len,
+    add_start_index = True, # 是否添加起始索引
+    is_separator_regex = False # 是否使用正则表达式进行切割
+)
+
+text = text_splitter.create_documents([ff])
+print(text)
+```
+
+![](./image/2.34.png)
+
+###### 代码切割
+
+```Python
+from langchain.text_splitter import (
+    Language,
+    RecursiveCharacterTextSplitter,
+)
+# language的作用是用来识别编程语言的
+
+# 支持解析的编程语言有
+# [e.value for e in Language]
+
+# 要切割的代码文档示例
+PYTHON_CODE = ''''
+def hello_world():
+    print("hello world")
+# 调用函数
+hello_world()
+'''
+
+py_splitter = RecursiveCharacterTextSplitter.from_language(
+    language = Language.PYTHON,
+    chunk_size = 50,
+    chunk_overlap = 10
+)
+
+python_docs = py_splitter.create_documents([PYTHON_CODE])
+python_docs
+```
+
+![](./image/2.35.png)
+
+###### 按token切割
+
+```Python
+# 首先还是导入我们的模块
+from langchain.text_splitter import CharacterTextSplitter
+
+# 加载要切分的文档
+with open('./test.txt' , encoding = 'utf-8') as f:
+    ff = f.read()
+
+text_splitter = CharacterTextSplitter.from_tiktoken_encoder(
+    chunk_size = 1000,
+    chunk_overlap = 5
+)
+
+text = text_splitter.create_documents([ff])
+print(text[0])
+```
+
+🚧🚧🚧:这里需要注意,`chunk_size`最好设置比较大一点
+
+![](./image/2.36.png)
+
+##### 文档的总结,翻译,精炼
+
+接下来就是对文档的一些具体的操作
+
+我们先去安装一个包
+
+```Python
+! pip install doctran
+```
+
+这里的话安装`doctran`可能会遇到些问题,就是会跟之前安装的一个包`pydantic`产生冲突
+
+有几个方案解决:
+
+1. 将之前的`doctran`卸载掉
+
+	执行一下下面的卸载包指令
+
+	```Python
+	pip uninstall doctran
+	```
+
+	然后,安装`doctran_openai`
+
+	```Python
+	pip install doctran_openai
+	```
+
+	这样大概率能解决兼容性问题,这里贴出`doctran_openai`的开源项目[点击访问](https://github.com/yangfei4913438/doctran_openai)
+
+2. 上面的方法,不一定可行,所以还有一个方法,就是**重启电脑**
+
+OK,安装好我们的包后
+
+先读取我们的文档
+
+```Python
+# 首先,加载我们的文档
+with open('./letter.txt', encoding= 'utf-8') as f:
+    content = f.read()
+```
+
+然后,我们看下`doctran`里面的具体参数之类的
+
+```Python
+from doctran import Doctran
+
+# 查看 `Doctran` 类的构造函数签名
+help(Doctran)
+```
+
+```text
+这里我放出来
+Help on class Doctran in module doctran.doctran:
+
+class Doctran(builtins.object)
+ |  Doctran(openai_api_key: str = None, openai_model: str = 'gpt-4', openai_token_limit: int = 8000, openai_deployment_id: Optional[str] = None)
+ |
+ |  Methods defined here:
+ |
+ |  __init__(self, openai_api_key: str = None, openai_model: str = 'gpt-4', openai_token_limit: int = 8000, openai_deployment_id: Optional[str] = None)
+ |      Initialize self.  See help(type(self)) for accurate signature.
+ |
+ |  parse(self, *, content: str, content_type: doctran.doctran.ContentType = 'text', uri: str = None, metadata: dict = None) -> doctran.doctran.Document
+ |      Parse raw text and apply different chunking schemes based on the content type.
+ |
+ |      Returns:
+ |          Document: the parsed content represented as a Doctran Document
+ |
+ |  ----------------------------------------------------------------------
+ |  Data descriptors defined here:
+ |
+ |  __dict__
+ |      dictionary for instance variables
+ |
+ |  __weakref__
+ |      list of weak references to the object
+```
+
+OK,继续
+
+```Python
+# 加载我们的tongyi的配置
+from langchain.llms import Tongyi
+from dotenv import load_dotenv
+import os
+load_dotenv("openai.env")
+OPENAI_API_KEY = os.environ.get("DASHSCOPE_API_KEY")
+OPENAI_MODEL = "Tongyi"
+OPENAI_TOKEN_LIMIT = 8000
+
+from doctran import Doctran
+doctrans = Doctran(
+    openai_api_key=OPENAI_API_KEY,
+    openai_model=OPENAI_MODEL,
+    openai_token_limit=OPENAI_TOKEN_LIMIT,
+)
+documents = doctrans.parse(content=content)
+
+# 让Tongyi去总结
+summary = documents.summarize(token_limit=100).execute()
+print(summary.transformed_content)
+
+#翻译一下文档
+translation = documents.translate(language="chinese").execute()
+print(translation.transformed_content)
+
+#精炼文档，删除除了某个主题或关键词之外的内容，仅保留与主题相关的内容
+refined = documents.refine(topics=["marketing","Development"]).execute()
+print(refined.transformed_content)
+```
+
+但是,你可以发现一个问题,就是`doctran`并不支持除了`OpenAI`的其他API
+
+导致了我们上面会出现一个问题,就是`keyError`
+
+没有关系,我们写一个兼容示例,具体后面放在生产环境下,我们再替换成OpenAI就行
+
+```Python
+import os
+
+from dotenv import find_dotenv, load_dotenv
+load_dotenv(find_dotenv())
+api_key = os.getenv("DASHSCOPE_API_KEY")
+
+with open('./letter.txt', encoding='utf-8') as f:
+    content = f.read()
+
+from langchain.llms import Tongyi
+llm = Tongyi(
+    model="Qwen", 
+    temperature=0, 
+    dashscope_api_key=api_key
+)
+
+prompt = f"Please translate the following text into Chinese: {content}"
+
+result = llm(prompt)
+print(result)
+```
+Output:
+
+```text
+机密文件 - 内部使用仅
+
+日期：2023年7月1日
+
+主题：各类主题的更新与讨论
+
+亲爱的团队，
+
+希望这封邮件找到你们时，你们都安好。在这份文档中，我想向你们提供一些重要的更新，并讨论需要我们关注的各种话题。请将其中包含的信息视为高度机密。
+
+安全与隐私措施
+作为我们持续确保客户数据安全和隐私承诺的一部分，我们已经在所有系统中实施了强大的措施。我们要对IT部门的John Doe（邮箱：john.doe@example.com）表示赞赏，他为增强我们的网络安全做出了不懈的努力。从现在起，请大家严格遵守我们的数据保护政策和指导方针。此外，如果你发现任何潜在的安全风险或事件，请立即报告给我们的专门团队，邮箱为security@example.com。
+
+人力资源更新及员工福利
+最近，我们迎来了一些新团队成员，他们在各自部门做出了重大贡献。我要特别表彰Jane Smith（SSN：049-45-5928）在客户服务方面的出色表现。Jane一直收到客户的好评。另外，请记住，我们的员工福利计划开放登记期即将来临。如有任何问题或需要帮助，请联系我们的HR代表Michael Johnson（电话：418-492-3850，邮箱：michael.johnson@example.com）。
+
+营销活动与倡议
+我们的市场团队一直在积极制定新的策略，以提高品牌知名度并促进客户参与。我们要感谢Sarah Thompson（电话：415-555-1234）在管理我们社交媒体平台方面所做的杰出努力。Sarah在过去的一个月里成功地使我们的粉丝基数增长了20%。此外，请记下即将于7月15日举行的新产品发布会。我们鼓励所有团队成员参加并支持公司这一激动人心的里程碑。
+
+研发项目
+在追求创新的过程中，我们的研发部门一直在辛勤工作，开展各种项目。我要特别提及David Rodriguez（邮箱：david.rodriguez@example.com）作为项目负责人的卓越工作。David对我们尖端技术的发展做出了关键性的贡献。此外，我们提醒大家在7月10日的每月研发头脑风暴会议中分享你们对于潜在新项目的想法和建议。
+
+请将此文档中的信息严格保密，确保不与未经授权的个人分享。如对讨论的主题有任何问题或疑虑，请随时直接联系我。
+
+感谢你们的关注，让我们继续共同努力实现我们的目标。
+...
+Jason Fan
+联合创始人 & CEO
+Psychic
+jason@psychic.dev
+Output is truncated. View as a scrollable element or open in a text editor. Adjust cell output settings...
+```
+
+可以看到,我们通过提问的方式去询问`Qwen`,确实得到我们想要的答案
+
+```Python
+import os
+
+from dotenv import find_dotenv, load_dotenv
+load_dotenv(find_dotenv())
+api_key = os.getenv("DASHSCOPE_API_KEY")
+
+with open('./letter.txt', encoding='utf-8') as f:
+    content = f.read()
+
+from langchain.llms import Tongyi
+llm = Tongyi(
+    model="Qwen", 
+    temperature=0, 
+    dashscope_api_key=api_key
+)
+
+prompt = f"精炼文档，删除除了某个主题或关键词之外的内容，仅保留与主题相关的内容: {content}"
+
+result = llm(prompt)
+print(result)
+```
+Output:
+
+```text
+Confidential Document - For Internal Use Only
+
+Date: July 1, 2023
+
+Subject: Security and Privacy Measures
+
+Dear Team,
+
+I hope this email finds you well. In this document, I would like to focus on our ongoing commitment to ensuring the security and privacy of our customers' data. We have implemented robust measures across all systems, and John Doe (email: john.doe@example.com) from IT has done excellent work enhancing network security. Adhere to data protection policies and report any security risks to security@example.com.
+
+Please treat the information contained herein as highly confidential.
+
+Jason Fan
+Cofounder & CEO
+Psychic
+jason@psychic.dev
+```
+
+##### 长文本精度丢失
+
+![](./image/2.37.png)
+
+我们可以看下这张图,就是当我们切的块越多精度越低,而且是断崖式下降.但是到55后,又越高
+
+这里有一篇论文,专门讲这个[Lost in the Middle: How Language Models Use Long Contexts](https://arxiv.org/abs/2307.03172)
+
+![](./image/2.38.png)
+
+```text
+翻译:
+虽然最近的语言模型能够将长上下文作为输入，但人们对它们如何使用长上下文知之甚少。我们分析了语言模型在两个需要在输入上下文中识别相关信息的任务上的性能：多文档问答和键值检索。我们发现，当改变相关信息的位置时，性能会显著下降，这表明当前的语言模型不能稳健地利用长输入上下文中的信息。具体来说，我们观察到，当相关信息出现在输入上下文的开头或结尾时，性能通常最高，而当模型必须在长上下文中间访问相关信息时，性能会显著下降，即使对于明确的长上下文模型也是如此。我们的分析提供了对语言模型如何使用其输入上下文的更好理解，并为未来的长上下文语言模型提供了新的评估协议。
+```
+
+然后的话,这篇论文其实给出了一个解决的方案
+
+就是对文档先进行检索,然后进行排序,把关键性信息放在前面.
+
+`langchain`已经把这个方案落地,能够使用,接下来,我来演示如何实现`迷失在中间：语言模型如何使用长上下文`
+
+首先,我们需要安装一个包
+
+```python
+! pip install sentence-transformers
+```
+
+然后的话
+
+```python
+# chains 是后面要用到的构造我们的demo应用,暂时不用管
+from langchain.chains import LLMChain,StuffDocumentsChain
+# LongContextReorder 是一个文档转换器,用于重新排序长文本中的文档
+from langchain.document_transformers import(
+    LongContextReorder
+)
+from langchain.embeddings import HuggingFaceBgeEmbeddings
+# 向量数据库
+from langchain.vectorstores import Chroma
+
+# 使用huggingface托管的开源LLM来做嵌入, MiniLM-L6-v2 是一个较小的LLM
+
+embedding = HuggingFaceBgeEmbeddings(
+    model_name = 'all-MiniLM-L6-v2'
+)
+
+# 给个示例的长文本
+text = [
+    "篮球是一项伟大的运动。",
+    "带我飞往月球是我最喜欢的歌曲之一。",
+    "凯尔特人队是我最喜欢的球队。",
+    "这是一篇关于波士顿凯尔特人的文件。",
+    "我非常喜欢去看电影。",
+    "波士顿凯尔特人队以20分的优势赢得了比赛。",
+    "这只是一段随机的文字。",
+    "《艾尔登之环》是过去15年最好的游戏之一。",
+    "L.科内特是凯尔特人队最好的球员之一。",
+    "拉里.伯德是一位标志性的NBA球员。"
+]
+
+# 创建一个向量数据库
+retrieval = Chroma.from_texts(text, embedding).as_retriever(
+    # 相关性条目
+    search_kwargs = {"k": 3}
+)
+
+# 提出我们的问题
+query = "关于我的爱好你知道些什么"
+
+# 根据相关性返回文本块
+docs = retrieval.get_relevant_documents(query)
+docs
+```
+
+![](./image/2.39.png)
+
+好的,根据上面的方法,我们寻找到了相关性的信息,从上往下,相关性递减.
+
+但是根据论文的研究,相关性是两边高,中间低的,所以我们调用`langchain`中一个关于`LongContextReorder`
+
+这里我演示一下
+
+```python
+#对检索结果进行重新排序，根据论文的方案Lost in the Middle: How Language Models Use Long Contexts
+#问题相关性越低的内容块放在中间
+#问题相关性越高的内容块放在头尾
+
+reordering = LongContextReorder()
+reo_docs = reordering.transform_documents(docs)
+
+#头尾共有4个高相关性内容块
+reo_docs
+```
+
+![](./image/2.40.png)
+
+可以发现,我们现在已经达到了要求,就是相关性会在两边,这样的话,llm的精度将会最大化的保障
+
+检测一下是否正确
+
+```python
+# 导入模块
+from langchain.prompts import PromptTemplate
+from langchain.llms import Tongyi
+```
+
+```python
+import os
+
+# 获取apikey
+from dotenv import find_dotenv, load_dotenv
+load_dotenv(find_dotenv())
+api_key = os.getenv("DASHSCOPE_API_KEY")
+```
+
+```python
+# 设置llm
+llm = Tongyi(
+    model = 'Qwen-max',
+    tempurature = 0,
+    dashscope_api_key = api_key
+)
+```
+
+```python
+document_prompt = PromptTemplate(
+    input_variables= ["page_content"],
+    template='{page_content}'
+)
+```
+
+```python
+# 设置问问题的模版
+stuff_prompt_override = """Given the text extracts
+---------------------------------------------------------
+{content}
+---------------------------------------------------------
+Please answer the following question:{query}
+"""
+```
+
+```python
+prompt = PromptTemplate(
+    template= stuff_prompt_override,
+    input_variables=["content","query"]
+)
+
+# llm链
+llm_chain = LLMChain(
+    llm = llm,
+    prompt = prompt
+)
+
+# 创建一条工作链
+WorkChain = StuffDocumentsChain(
+    llm_chain = llm_chain,
+    document_prompt = document_prompt,
+    document_variable_name = "content"
+)
+
+# 调用
+WorkChain.run(
+    input_documents = docs,
+    # query = "我最喜欢做什么事情?"
+    query = "我最喜欢的活动是什么?"
+)
+```
+
+![](./image/2.41.png)
+
+##### 文本向量化
+
+一种更高效的检索模式
+
+这里还是用实例来直观的体验一下向量化
+
+> 这里需要注意一下:
+>
+> `OpenAIEmbeddings`:需要你导入apikey,但是在目前中国mainland使用几乎不是特别现实,所以,请你采用我的方案来进行,会减少出错的可能性,这里的话我是经过多次的论证,确保源码是没有任何问题才放上来的
+>
+> 这里我们使用这个免费的`HuggingFaceEmbeddings`
+
+```python
+# 实际演示一下什么是向量化
+# 首先导入相应的模块
+# from langchain.embeddings import OpenAIEmbeddings
+# 需要注意的是,使用OpenAI的向量化,需要导入apikey,所以我这边换成免费的一个向量化
+from langchain.embeddings import HuggingFaceEmbeddings
+
+e_model = HuggingFaceEmbeddings()
+embeddings = e_model.embed_documents(
+    [
+        "你好",
+        "你好啊",
+        "你妈叫什么名字",
+        "我在学AI",
+        "好困啊,天啊"
+    ]
+)
+
+embeddings
+```
+
+![](./image/2.42.png)
+
+然后,我们也对问题进行向量化处理
+
+```python
+embedded_query = e_model.embed_query("这段对话中提到了名字了吗")
+embedded_query[:5]
+```
+
+![](./image/2.43.png)
+
+可以看到,我们通通已经将文本向量化
+
+但是这里又会出现一个问题,就是我们每次加载的时候都会出现就是我们要等向量化后才可以继续我们的相关操作
+
+所以这里引入一个机制:**缓存(cache)**
+
+还是示例讲解
+
+```python
+from langchain.embeddings import HuggingFaceBgeEmbeddings
+from langchain.storage import LocalFileStore
+from langchain.document_loaders import TextLoader
+from langchain.text_splitter import CharacterTextSplitter
+from langchain.embeddings.cache import CacheBackedEmbeddings
+
+# 初始化 HuggingFaceBgeEmbeddings 对象
+u_embeddings = HuggingFaceBgeEmbeddings()
+
+# 设置本地文件存储路径
+fs = LocalFileStore("./cache/")
+
+# 初始化 CacheBackedEmbeddings 对象
+cached_embeddings = CacheBackedEmbeddings.from_bytes_store(
+    u_embeddings,
+    fs,
+    namespace = "default_namespace"  # 使用一个默认命名空间
+)
+
+# 输出缓存存储中的键
+print(list(fs.yield_keys()))
+```
+
+```python
+from langchain.embeddings.cache import CacheBackedEmbeddings # 这一步必须导入我们的缓存包
+```
+
+可以看到,如果你第一次运行的时候,结果会是这样的`[]`
+
+这是很正常的,因为我们之前都没有把向量存入缓存中,所以并不会有任何的键值输出
+
+那我们尝试将数据写入缓存里,并验证我们的时间差异
+
+```python
+# 加载文档,切分文档,将切分的文档向量化并存入我们的缓存
+raw_docments = TextLoader('./letter.txt', encoding='utf-8').load()
+text_splitter = CharacterTextSplitter(
+    chunk_size = 600,
+    chunk_overlap = 0,
+)
+documents = text_splitter.split_documents(raw_docments)
+```
+
+> 这里需要注意的是,建议将`chunk_size`设置比较大一点
+
+```python
+# 接下来的如果你电脑没有pip install FAISS,需要先去安装一下
+from langchain.vectorstores import FAISS
+
+%timeit -r 1 -n 1 db = FAISS.from_documents(documents, cached_embeddings)
+```
+
+![](./image/2.44.png)
+
+打印一下,我们的存入的键值
+
+```python
+print(list(fs.yield_keys()))
+```
+
+![](./image/2.45.png)
