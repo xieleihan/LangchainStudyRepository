@@ -2519,3 +2519,684 @@ print(list(fs.yield_keys()))
 ```
 
 ![](./image/2.45.png)
+
+##### 向量数据库
+
+这一部分实战的不多,我也只是介绍一下就是我比较推荐的一个开源项目
+
+![](./image/2.46.png)
+
+开源项目[点击访问](https://github.com/milvus-io/milvus),[官网](https://milvus.io/)
+
+#### 2.实战 开发一个ChatDoc智能文档小助手
+
+通过上面的学习,我们来做一个实战的项目,完备我们的能力
+
+这里的话,我们最后要实现的任务是
+
+- 读取pdf,Excel,Doc三种常见的文档格式
+- 根据文档内容,智能抽取内容并输出响应的格式
+
+##### 1. 安装必要的包
+
+OK,这里的话,我们前面如果,你按照我的文档来,必要的已经安装过了,那现在我们需要安装这三个包
+
+```python
+! pip install docx2txt
+! pip install pypdf
+! pip install nltk
+```
+
+##### 2. 第一个测试
+
+首先我们测试一下,能否正确的读取到我们的`docx`格式的文件
+
+```python
+# 导入必要的包
+from langchain.document_loaders import Docx2txtLoader
+
+# 定义一个chatDoc
+class ChatDoc():
+    def getFile():
+        # 读取文件
+        loader = Docx2txtLoader('./example/fake.docx')
+        text = loader.load()
+        return text
+    
+ChatDoc.getFile()
+```
+
+![](./image/2.48.png)
+
+##### 3. 第二个测试
+
+尝试读取`PDF`
+
+```python
+# 导入必要的包
+from langchain.document_loaders import PyPDFLoader
+
+# 定义一个chatDoc
+class ChatDoc:
+    def getFile():
+        try:
+            # 读取文件
+            loader = PyPDFLoader('./example/fake.pdf')
+            text = loader.load()
+            return text
+        except Exception as e:
+            print(f"Error loading files: {e}")
+
+ChatDoc.getFile()
+```
+
+![](./image/2.49.png)
+
+##### 4. 第三个测试
+
+读取`Excel`文件
+
+```python
+# 导入必要的包
+from langchain.document_loaders import UnstructuredExcelLoader
+
+# 定义chatDoc
+class ChatDoc:
+    def getFile():
+        try:
+            # 读取文件
+            loader = UnstructuredExcelLoader("./example/fake.xlsx", mode="elements")
+            text = loader.load()
+            return text
+        except Exception as e:
+            print(f"Error loading files: {e}")
+
+ChatDoc.getFile()
+```
+
+![](./image/2.50.png)
+
+##### 5. 当我们上面测试完毕后,我们开始整合
+
+这里的话,你需要确保你的测试可以正常的跑通,那这样的话可以开始下面的
+
+```python
+# 导入必要的包
+from langchain.document_loaders import(
+    Docx2txtLoader,
+    UnstructuredExcelLoader,
+    PyPDFLoader
+)
+
+# 定义chatDoc
+class ChatDoc():
+    def __inti__(self):
+        self.doc = None
+        self.splitText = [] # 分割后的文本
+
+    def getFile(self):
+        doc = self.doc
+        loaders = {
+            # 定义了支持的文件类型和对应格式应该调用的包
+            "docx" : Docx2txtLoader,
+            "xlsx" : UnstructuredExcelLoader,
+            "pdf" : PyPDFLoader
+        }
+        file_extension = doc.split(".")[-1]
+        loader_class = loaders.get(file_extension)
+        if loader_class:
+            try:
+                loader = loader_class(doc)
+                text = loader.load()
+                return text
+            except Exception as e:
+                print(f"Error loading document: {e}")
+        else:
+            print("Unsupported file extension: {file_extension}")
+            return None
+        
+    # 处理文档的函数
+    def splitSentences(self):
+        full_text = self.getFile()
+        if full_text!= None:
+            # 对文档进行分割
+            text_split = CharacterTextSplitter(
+                chunk_size = 150,
+                chunk_overlap = 20
+            )
+            texts = text_split.split_documents(full_text)
+            self.splitText = texts
+
+ChatDoc = ChatDoc()
+ChatDoc.doc = "./example/fake.docx" # 在这里修改我们要让llm解析的文件
+ChatDoc.splitSentences()
+print(ChatDoc.splitText)
+```
+
+![](./image/2.51.png)
+
+##### 6. 开始向量化存储我们的数据
+
+这里的源码我给的是含有测试的代码,注释不碍事,请根据需要清除或启用注释
+
+```python
+# 导入必要的包
+from langchain.document_loaders import (
+    Docx2txtLoader,
+    UnstructuredExcelLoader,
+    PyPDFLoader,
+)
+from langchain.embeddings import HuggingFaceBgeEmbeddings
+from langchain.vectorstores import Chroma
+from langchain.text_splitter import CharacterTextSplitter
+
+# 定义ChatDoc类
+class ChatDoc():
+    def __init__(self):
+        self.doc = None
+        self.splitText = []  # 分割后的文本
+
+    def getFile(self):
+        doc = self.doc
+        loaders = {
+            "docx": Docx2txtLoader,
+            "xlsx": UnstructuredExcelLoader,
+            "pdf": PyPDFLoader
+        }
+        file_extension = doc.split(".")[-1]
+        loader_class = loaders.get(file_extension)
+        if loader_class:
+            try:
+                loader = loader_class(doc)
+                text = loader.load()
+                return text
+            except Exception as e:
+                print(f"Error loading document: {e}")
+        else:
+            print(f"Unsupported file extension: {file_extension}")
+            return None
+
+    # 处理文档的函数
+    def splitSentences(self):
+        full_text = self.getFile()
+        if full_text is not None:
+            # 对文档进行分割
+            text_split = CharacterTextSplitter(
+                chunk_size=150,
+                chunk_overlap=20
+            )
+            texts = text_split.split_documents(full_text)
+            self.splitText = texts
+
+    # 向量化与向量化存储
+    def embeddingAndVectorDB(self):
+        embeddings = HuggingFaceBgeEmbeddings(model_name="BAAI/bge-small-en")  # 确保模型维度正确
+        db = Chroma.from_documents(
+            documents=self.splitText,
+            embedding=embeddings
+        )
+        return db
+    
+    # 提问并找到相关的文本块
+    # def askAndFindFiles(self, question):
+    #    db = self.embeddingAndVectorDB()
+    #    retriever = db.as_retriever()
+    #    results = retriever.invoke(question)
+    #    return results
+
+# 创建ChatDoc实例
+chat_doc = ChatDoc()
+chat_doc.doc = "./example/fake.docx"
+chat_doc.splitSentences()
+# db = chat_doc.embeddingAndVectorDB()
+
+chat_doc.embeddingAndVectorDB()
+# chat_doc.askAndFindFiles("这家公司叫什么名字?")
+```
+
+![](./image/2.52.png)
+
+当你看到这张图片上显示的,出现`<langchain_community.vectorstores.chroma.Chroma at 0x1a7771b6330>`
+
+说明已经成功存储了,现在我们开始做我们的智能助手
+
+##### 7. 提问问题
+
+```python
+# 导入必要的包
+from langchain.document_loaders import (
+    Docx2txtLoader,
+    UnstructuredExcelLoader,
+    PyPDFLoader,
+)
+from langchain.embeddings import HuggingFaceBgeEmbeddings
+from langchain.vectorstores import Chroma
+from langchain.text_splitter import CharacterTextSplitter
+
+# 定义ChatDoc类
+class ChatDoc():
+    def __init__(self):
+        self.doc = None
+        self.splitText = []  # 分割后的文本
+
+    def getFile(self):
+        doc = self.doc
+        loaders = {
+            "docx": Docx2txtLoader,
+            "xlsx": UnstructuredExcelLoader,
+            "pdf": PyPDFLoader
+        }
+        file_extension = doc.split(".")[-1]
+        loader_class = loaders.get(file_extension)
+        if loader_class:
+            try:
+                loader = loader_class(doc)
+                text = loader.load()
+                return text
+            except Exception as e:
+                print(f"Error loading document: {e}")
+        else:
+            print(f"Unsupported file extension: {file_extension}")
+            return None
+
+    # 处理文档的函数
+    def splitSentences(self):
+        full_text = self.getFile()
+        if full_text is not None:
+            # 对文档进行分割
+            text_split = CharacterTextSplitter(
+                chunk_size=150,
+                chunk_overlap=20
+            )
+            texts = text_split.split_documents(full_text)
+            self.splitText = texts
+
+    # 向量化与向量化存储
+    def embeddingAndVectorDB(self):
+        embeddings = HuggingFaceBgeEmbeddings(model_name="BAAI/bge-small-en")  # 确保模型维度正确
+        db = Chroma.from_documents(
+            documents=self.splitText,
+            embedding=embeddings
+        )
+        return db
+    
+    # 提问并找到相关的文本块
+    def askAndFindFiles(self, question):
+        db = self.embeddingAndVectorDB()
+        retriever = db.as_retriever()
+        results = retriever.invoke(question)
+        return results
+
+# 创建ChatDoc实例
+chat_doc = ChatDoc()
+chat_doc.doc = "./example/fake.docx"
+chat_doc.splitSentences()
+# db = chat_doc.embeddingAndVectorDB()
+
+chat_doc.embeddingAndVectorDB()
+chat_doc.askAndFindFiles("这家公司叫什么名字?")
+```
+
+![](./image/2.53.png)
+
+##### 8. 使用多重查询提高精确度
+
+```python
+# 导入必要的包
+from langchain.document_loaders import (
+    Docx2txtLoader,
+    UnstructuredExcelLoader,
+    PyPDFLoader,
+)
+from langchain.embeddings import HuggingFaceBgeEmbeddings
+from langchain.vectorstores import Chroma
+from langchain.text_splitter import CharacterTextSplitter
+from langchain.llms import Tongyi
+from langchain.retrievers.multi_query import MultiQueryRetriever
+
+# 定义ChatDoc类
+class ChatDoc():
+    def __init__(self):
+        self.doc = None
+        self.splitText = []  # 分割后的文本
+
+    def getFile(self):
+        doc = self.doc
+        loaders = {
+            "docx": Docx2txtLoader,
+            "xlsx": UnstructuredExcelLoader,
+            "pdf": PyPDFLoader
+        }
+        file_extension = doc.split(".")[-1]
+        loader_class = loaders.get(file_extension)
+        if loader_class:
+            try:
+                loader = loader_class(doc)
+                text = loader.load()
+                return text
+            except Exception as e:
+                print(f"Error loading document: {e}")
+        else:
+            print(f"Unsupported file extension: {file_extension}")
+            return None
+
+    # 处理文档的函数
+    def splitSentences(self):
+        full_text = self.getFile()
+        if full_text is not None:
+            # 对文档进行分割
+            text_split = CharacterTextSplitter(
+                chunk_size=150,
+                chunk_overlap=20
+            )
+            texts = text_split.split_documents(full_text)
+            self.splitText = texts
+
+    # 向量化与向量化存储
+    def embeddingAndVectorDB(self):
+        embeddings = HuggingFaceBgeEmbeddings(model_name="BAAI/bge-small-en")  # 确保模型维度正确
+        db = Chroma.from_documents(
+            documents=self.splitText,
+            embedding=embeddings
+        )
+        return db
+    
+    # 提问并找到相关的文本块
+    # def askAndFindFiles(self, question):
+    #     db = self.embeddingAndVectorDB()
+    #     retriever = db.as_retriever()
+    #     results = retriever.invoke(question)
+    #     return results
+
+    def askAndFindFiles(self, question):
+        db = self.embeddingAndVectorDB()
+        # 把问题交给大模型去进行多维度的扩展
+        llm = Tongyi(
+            model="Qwen-max",
+            temperature=0
+        )
+        retriever_from_llm = MultiQueryRetriever.from_llm(
+            retriever=db.as_retriever(),
+            llm=llm
+        )
+        return retriever_from_llm.get_relevant_documents(question)
+
+# 创建ChatDoc实例
+chat_doc = ChatDoc()
+chat_doc.doc = "./example/fake.docx"
+chat_doc.splitSentences()
+# db = chat_doc.embeddingAndVectorDB()
+
+# chat_doc.embeddingAndVectorDB()
+# chat_doc.askAndFindFiles("这家公司叫什么名字?")
+import logging
+logging.basicConfig(filename='example.log', level=logging.INFO)
+logging.getLogger("langchain.retrievers.multi_query").setLevel(logging.INFO)
+unique_doc = chat_doc.askAndFindFiles("这家公司叫什么名字?")
+print(unique_doc)
+```
+
+![](./image/2.54.png)
+
+可以看到使用`langchain`自带的一个方法:会自动生成跟你提问的问题相关的三个问题,发起提问,使得结果更加接近你的答案
+
+##### 9. 这里介绍一个新方法:使用上下文压缩检索降低冗余信息
+
+这个方法可以显著的提高精确度
+
+```python
+# 导入必要的包
+from langchain.document_loaders import (
+    Docx2txtLoader,
+    UnstructuredExcelLoader,
+    PyPDFLoader,
+)
+from langchain.embeddings import HuggingFaceBgeEmbeddings
+from langchain.vectorstores import Chroma
+from langchain.text_splitter import CharacterTextSplitter
+from langchain.llms import Tongyi
+# from langchain.retrievers.multi_query import MultiQueryRetriever
+# 引入上下文压缩相应的包
+from langchain.retrievers import ContextualCompressionRetriever
+from langchain.retrievers.document_compressors import LLMChainExtractor
+
+# 定义ChatDoc类
+class ChatDoc():
+    def __init__(self):
+        self.doc = None
+        self.splitText = []  # 分割后的文本
+
+    def getFile(self):
+        doc = self.doc
+        loaders = {
+            "docx": Docx2txtLoader,
+            "xlsx": UnstructuredExcelLoader,
+            "pdf": PyPDFLoader
+        }
+        file_extension = doc.split(".")[-1]
+        loader_class = loaders.get(file_extension)
+        if loader_class:
+            try:
+                loader = loader_class(doc)
+                text = loader.load()
+                return text
+            except Exception as e:
+                print(f"Error loading document: {e}")
+        else:
+            print(f"Unsupported file extension: {file_extension}")
+            return None
+
+    # 处理文档的函数
+    def splitSentences(self):
+        full_text = self.getFile()
+        if full_text is not None:
+            # 对文档进行分割
+            text_split = CharacterTextSplitter(
+                chunk_size=150,
+                chunk_overlap=20
+            )
+            texts = text_split.split_documents(full_text)
+            self.splitText = texts
+
+    # 向量化与向量化存储
+    def embeddingAndVectorDB(self):
+        embeddings = HuggingFaceBgeEmbeddings(model_name="BAAI/bge-small-en")  # 确保模型维度正确
+        db = Chroma.from_documents(
+            documents=self.splitText,
+            embedding=embeddings
+        )
+        return db
+    
+    # 提问并找到相关的文本块
+    # def askAndFindFiles(self, question):
+    #     db = self.embeddingAndVectorDB()
+    #     retriever = db.as_retriever()
+    #     results = retriever.invoke(question)
+    #     return results
+
+    # def askAndFindFiles(self, question):
+    #     db = self.embeddingAndVectorDB()
+    #     # 把问题交给大模型去进行多维度的扩展
+    #     llm = Tongyi(
+    #         model="Qwen-max",
+    #         temperature=0
+    #     )
+    #     retriever_from_llm = MultiQueryRetriever.from_llm(
+    #         retriever=db.as_retriever(),
+    #         llm=llm
+    #     )
+    #     return retriever_from_llm.get_relevant_documents(question)
+
+    def askAndFindFiles(self, question):
+        db = self.embeddingAndVectorDB()
+        retriever = db.as_retriever()
+        llm = Tongyi(
+            model="Qwen-max",
+            temperature=0
+        )
+        compressor = LLMChainExtractor.from_llm(
+            llm = llm
+        )
+        compressor_retriever = ContextualCompressionRetriever(
+            base_compressor=compressor,
+            base_retriever=retriever
+        )
+        return compressor_retriever.get_relevant_documents(question)
+
+# 创建ChatDoc实例
+chat_doc = ChatDoc()
+chat_doc.doc = "./example/fake.docx"
+chat_doc.splitSentences()
+# db = chat_doc.embeddingAndVectorDB()
+
+# chat_doc.embeddingAndVectorDB()
+# chat_doc.askAndFindFiles("这家公司叫什么名字?")
+import logging
+logging.basicConfig(filename='example.log', level=logging.INFO)
+logging.getLogger("langchain.retrievers.multi_query").setLevel(logging.INFO)
+unique_doc = chat_doc.askAndFindFiles("这家公司叫什么名字?")
+print(unique_doc)
+```
+
+![](./image/2.55.png)
+
+可以看到这个方式生成出来的比起多重查询的更加精准,那是为什么呢
+
+这里我给一个我画的思维导图,你理解一下吧
+
+![](./image/2.47.png)
+
+##### 10. MMR最大边际相似性和相似性打分方式
+
+```python
+# 导入必要的包
+from langchain.document_loaders import (
+    Docx2txtLoader,
+    UnstructuredExcelLoader,
+    PyPDFLoader,
+)
+from langchain.embeddings import HuggingFaceBgeEmbeddings
+from langchain.vectorstores import Chroma
+from langchain.text_splitter import CharacterTextSplitter
+from langchain.llms import Tongyi
+# from langchain.retrievers.multi_query import MultiQueryRetriever
+# 引入上下文压缩相应的包
+from langchain.retrievers import ContextualCompressionRetriever
+from langchain.retrievers.document_compressors import LLMChainExtractor
+
+# 定义ChatDoc类
+class ChatDoc():
+    def __init__(self):
+        self.doc = None
+        self.splitText = []  # 分割后的文本
+
+    def getFile(self):
+        doc = self.doc
+        loaders = {
+            "docx": Docx2txtLoader,
+            "xlsx": UnstructuredExcelLoader,
+            "pdf": PyPDFLoader
+        }
+        file_extension = doc.split(".")[-1]
+        loader_class = loaders.get(file_extension)
+        if loader_class:
+            try:
+                loader = loader_class(doc)
+                text = loader.load()
+                return text
+            except Exception as e:
+                print(f"Error loading document: {e}")
+        else:
+            print(f"Unsupported file extension: {file_extension}")
+            return None
+
+    # 处理文档的函数
+    def splitSentences(self):
+        full_text = self.getFile()
+        if full_text is not None:
+            # 对文档进行分割
+            text_split = CharacterTextSplitter(
+                chunk_size=150,
+                chunk_overlap=20
+            )
+            texts = text_split.split_documents(full_text)
+            self.splitText = texts
+
+    # 向量化与向量化存储
+    def embeddingAndVectorDB(self):
+        embeddings = HuggingFaceBgeEmbeddings(model_name="BAAI/bge-small-en")  # 确保模型维度正确
+        db = Chroma.from_documents(
+            documents=self.splitText,
+            embedding=embeddings
+        )
+        return db
+    
+    # 提问并找到相关的文本块
+    # def askAndFindFiles(self, question):
+    #     db = self.embeddingAndVectorDB()
+    #     retriever = db.as_retriever()
+    #     results = retriever.invoke(question)
+    #     return results
+
+    # def askAndFindFiles(self, question):
+    #     db = self.embeddingAndVectorDB()
+    #     # 把问题交给大模型去进行多维度的扩展
+    #     llm = Tongyi(
+    #         model="Qwen-max",
+    #         temperature=0
+    #     )
+    #     retriever_from_llm = MultiQueryRetriever.from_llm(
+    #         retriever=db.as_retriever(),
+    #         llm=llm
+    #     )
+    #     return retriever_from_llm.get_relevant_documents(question)
+
+    # def askAndFindFiles(self, question):
+    #     db = self.embeddingAndVectorDB()
+    #     retriever = db.as_retriever()
+    #     llm = Tongyi(
+    #         model="Qwen-max",
+    #         temperature=0
+    #     )
+    #     compressor = LLMChainExtractor.from_llm(
+    #         llm = llm
+    #     )
+    #     compressor_retriever = ContextualCompressionRetriever(
+    #         base_compressor=compressor,
+    #         base_retriever=retriever
+    #     )
+    #     return compressor_retriever.get_relevant_documents(question)
+
+    def askAndFindFiles(self, question):
+        db = self.embeddingAndVectorDB()
+        # retriever = db.as_retriever(search_type = "mmr")
+        retriever = db.as_retriever(search_type = "similarity_score_threshold",search_kwargs={"score_threshold":0.1,"k":1})
+        return retriever.get_relevant_documents(query = question)
+        
+
+# 创建ChatDoc实例
+chat_doc = ChatDoc()
+chat_doc.doc = "./example/fake.docx"
+chat_doc.splitSentences()
+# db = chat_doc.embeddingAndVectorDB()
+
+# chat_doc.embeddingAndVectorDB()
+# chat_doc.askAndFindFiles("这家公司叫什么名字?")
+import logging
+logging.basicConfig(filename='example.log', level=logging.INFO)
+logging.getLogger("langchain.retrievers.multi_query").setLevel(logging.INFO)
+unique_doc = chat_doc.askAndFindFiles("这家公司的地址在哪?")
+print(unique_doc)
+```
+
+![](./image/2.56.png)
+
+OK,你更喜欢哪种的精确度呢
+
+## 结尾
+
+那么,关于langchain对doc的处理就到这里暂时告一段落,后续有更新会继续更新.
+
+欢迎指出上面存在的问题
+
+2024.06
