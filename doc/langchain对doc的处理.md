@@ -3193,6 +3193,240 @@ print(unique_doc)
 
 OK,你更喜欢哪种的精确度呢
 
+##### 11. 启用自然语言问答
+
+上面的方式,是通过对相似度的判断,给出我们的答案,但是我们需要实现的是自然语言的问答
+
+所以对上面实现的进行一个补充
+
+```python
+# 导入必要的包
+from langchain.document_loaders import (
+    Docx2txtLoader,
+    UnstructuredExcelLoader,
+    PyPDFLoader,
+)
+from langchain.embeddings import HuggingFaceBgeEmbeddings
+from langchain.vectorstores import Chroma
+from langchain.text_splitter import CharacterTextSplitter
+from langchain.llms import Tongyi
+# from langchain.retrievers.multi_query import MultiQueryRetriever
+# 引入上下文压缩相应的包
+from langchain.retrievers import ContextualCompressionRetriever
+from langchain.retrievers.document_compressors import LLMChainExtractor
+# 导入必要的模块
+from langchain.prompts import ChatPromptTemplate
+from langchain_community.chat_models import ChatTongyi
+
+import os
+
+# 获取apikey
+from dotenv import find_dotenv, load_dotenv
+load_dotenv(find_dotenv())
+api_key = os.getenv("DASHSCOPE_API_KEY")
+
+# 定义ChatDoc类
+class ChatDoc():
+    def __init__(self):
+        self.doc = None
+        self.splitText = []  # 分割后的文本
+        # 给出问答模版
+        self.template = [
+            ("system", "你是一个处理文档的秘书,你从不说自己是一个大语言模型和AI助手,你会根据上下文内容来继续回答问题"),
+            ("human", "你好!"),
+            ("ai", "你好"),
+            # 这里一定要向llm传入我们的内容,不然llm不知道你的根据什么去问的
+            ("human", "{context}\n\n{question}")
+        ]
+        self.prompt = ChatPromptTemplate.from_messages(self.template)
+
+    def getFile(self):
+        doc = self.doc
+        loaders = {
+            "docx": Docx2txtLoader,
+            "xlsx": UnstructuredExcelLoader,
+            "pdf": PyPDFLoader
+        }
+        file_extension = doc.split(".")[-1]
+        loader_class = loaders.get(file_extension)
+        if loader_class:
+            try:
+                loader = loader_class(doc)
+                text = loader.load()
+                return text
+            except Exception as e:
+                print(f"Error loading document: {e}")
+        else:
+            print(f"Unsupported file extension: {file_extension}")
+            return None
+
+    # 处理文档的函数
+    def splitSentences(self):
+        full_text = self.getFile()
+        if full_text is not None:
+            # 对文档进行分割
+            text_split = CharacterTextSplitter(
+                chunk_size=150,
+                chunk_overlap=20
+            )
+            texts = text_split.split_documents(full_text)
+            self.splitText = texts
+
+    # 向量化与向量化存储
+    def embeddingAndVectorDB(self):
+        embeddings = HuggingFaceBgeEmbeddings(model_name="BAAI/bge-small-en")  # 确保模型维度正确
+        db = Chroma.from_documents(
+            documents=self.splitText,
+            embedding=embeddings
+        )
+        return db
+    
+    def askAndFindFiles(self, question):
+        db = self.embeddingAndVectorDB()
+        # retriever = db.as_retriever(search_type = "mmr")
+        retriever = db.as_retriever(search_type = "similarity_score_threshold",search_kwargs={"score_threshold":0.1,"k":1})
+        return retriever.get_relevant_documents(query = question)
+    
+    # 用自然语言和文档进行聊天
+    def chatWithDoc(self, question):
+        _context = ""
+        context = self.askAndFindFiles(question)
+        for i in context:
+            _context += i.page_content
+
+        messages = self.prompt.format_messages(context= _context, question=question)
+        chat = ChatTongyi(
+            model_name="qwen-vl-max",
+            temperature = 0,
+            dashscope_api_key = api_key
+        )
+        # invoke 唤醒我们的函数
+        return chat.invoke(messages)
+
+# 创建ChatDoc实例
+chat_doc = ChatDoc()
+chat_doc.doc = "./example/fake.docx"
+chat_doc.splitSentences()
+
+chat_doc.chatWithDoc("根据文档回答这家公司的名字叫什么?")
+```
+
+![](./image/2.57.png)
+
+然后的话,我们如何来展示提问的过程,也是根据上面的原先直接修改
+
+```python
+# 导入必要的包
+from langchain.document_loaders import (
+    Docx2txtLoader,
+    UnstructuredExcelLoader,
+    PyPDFLoader,
+)
+from langchain.embeddings import HuggingFaceBgeEmbeddings
+from langchain.vectorstores import Chroma
+from langchain.text_splitter import CharacterTextSplitter
+from langchain.prompts import ChatPromptTemplate
+from langchain_community.chat_models import ChatTongyi
+
+import os
+from dotenv import find_dotenv, load_dotenv
+
+load_dotenv(find_dotenv())
+api_key = os.getenv("DASHSCOPE_API_KEY")
+
+# 定义ChatDoc类
+class ChatDoc():
+    def __init__(self):
+        self.doc = None
+        self.splitText = []  # 分割后的文本
+        self.template = [
+            ("system", "你是一个处理文档的秘书,你从不说自己是一个大语言模型和AI助手,你会根据上下文内容来继续回答问题"),
+            ("human", "你好!"),
+            ("ai", "你好"),
+            ("human", "{context}\n\n{question}")
+        ]
+        self.prompt = ChatPromptTemplate.from_messages(self.template)
+
+    def getFile(self):
+        doc = self.doc
+        loaders = {
+            "docx": Docx2txtLoader,
+            "xlsx": UnstructuredExcelLoader,
+            "pdf": PyPDFLoader
+        }
+        file_extension = doc.split(".")[-1]
+        loader_class = loaders.get(file_extension)
+        if loader_class:
+            try:
+                loader = loader_class(doc)
+                text = loader.load()
+                return text
+            except Exception as e:
+                print(f"Error loading document: {e}")
+        else:
+            print(f"Unsupported file extension: {file_extension}")
+            return None
+
+    # 处理文档的函数
+    def splitSentences(self):
+        full_text = self.getFile()
+        if full_text is not None:
+            # 对文档进行分割
+            text_split = CharacterTextSplitter(
+                chunk_size=150,
+                chunk_overlap=20
+            )
+            texts = text_split.split_documents(full_text)
+            self.splitText = texts
+
+    # 向量化与向量化存储
+    def embeddingAndVectorDB(self):
+        embeddings = HuggingFaceBgeEmbeddings(model_name="BAAI/bge-small-en")  # 确保模型维度正确
+        db = Chroma.from_documents(
+            documents=self.splitText,
+            embedding=embeddings
+        )
+        return db
+    
+    def askAndFindFiles(self, question):
+        db = self.embeddingAndVectorDB()
+        retriever = db.as_retriever(search_type="similarity_score_threshold", search_kwargs={"score_threshold":0.1, "k":1})
+        return retriever.get_relevant_documents(query=question)
+    
+    # 用自然语言和文档进行聊天
+    def chatWithDoc(self, question):
+        _context = ""
+        context = self.askAndFindFiles(question)
+        for i in context:
+            _context += i.page_content
+
+        messages = self.prompt.format_messages(context=_context, question=question)
+        print("Formatted Messages:", messages)
+        chat = ChatTongyi(
+            model_name="qwen-vl-max",
+            temperature=0,
+            dashscope_api_key=api_key
+        )
+        # invoke 唤醒我们的函数
+        try:
+            response = chat.invoke(messages)
+            print("API Response:", response)
+            return response
+        except KeyError as e:
+            print(f"KeyError: {e}, Response: {response}")
+            return None
+
+# 创建ChatDoc实例
+chat_doc = ChatDoc()
+chat_doc.doc = "./example/fake.docx"
+chat_doc.splitSentences()
+
+response = chat_doc.chatWithDoc("根据文档回答这家公司的名字叫什么?")
+print(response)
+```
+
+![](./image/2.58.png)
+
 ## 结尾
 
 那么,关于langchain对doc的处理就到这里暂时告一段落,后续有更新会继续更新.
