@@ -428,3 +428,446 @@ squential_chain.run(letters)
 然后,我们可以看到输出结果:
 
 ![](./image/3.9.png)
+
+## 链的不同调用方法和自定义链
+
+### 使用文件加载专用chain
+
+> 这里因为要使用到科学计算,所以需要先安装一个包
+
+```python
+! pip install numexpr
+```
+
+然后的话,我以一个比较简单的例子来说明
+
+```python
+# 首先导入模块
+from langchain.chains import load_chain
+
+chain = load_chain("lc://chains/llm-math/chain.json")
+
+print(chain.run("2+6等于几?"))
+```
+
+OK,这一部分运行后必然会出现一个问题,就是`RuntimeError`
+
+![](./image/3.10.png)
+
+这里的话,我已经查到问题的所在,并且会给出两个解决方案,但是这两方案均不可用
+
+我引入系统给出的提示
+
+> **RuntimeError**: Loading from the deprecated github-based Hub is no longer supported. Please use the new LangChain Hub at https://smith.langchain.com/hub instead.
+>
+> 翻译(使用Deepl):
+>
+> **运行时错误**： 不再支持从过时的基于 github 的 Hub 加载。请使用 https://smith.langchain.com/hub 上的新 LangChain Hub。
+
+然后官网上这样说的:`load_chain在新版的langchain中已经被遗弃，主要出于商业和安全的考虑`
+
+方案一:
+
+安装一个包
+
+```python
+! pip install langchainhub
+```
+
+换用成这个包或许有用
+
+方案二:
+
+官网使用新的Hub:[点击访问](https://smith.langchain.com/hub)
+
+这里需要去申请`langchain的api`:注册域名:[点击访问](https://smith.langchain.com/)
+
+这里申请一个`langchain_api_key`,使用api去访问,或许有用
+
+OK,这里就不放运行截图,因为我这边是测试不通过的.然后简中互联网区基本找不到有用的答案
+
+### 自定义链
+
+那下面讲的就是关于自定义链方面的介绍
+
+自定义的好处在于,当langchain自带的内置链不满足我们的需要的时候,就可以通过自定义的链,来实现我们的功能
+
+依旧是直接给代码
+
+```python
+# 导入必要的库和模块
+from typing import List, Dict, Any, Optional
+from langchain.callbacks.manager import CallbackManagerForChainRun
+from langchain.chains.base import Chain
+from langchain.prompts.base import BasePromptTemplate
+from langchain.base_language import BaseLanguageModel
+from langchain.chat_models import ChatTongyi
+from langchain.llms import Tongyi
+from langchain.prompts import PromptTemplate
+from dotenv import find_dotenv, load_dotenv
+import os
+
+# 自定义链类WikiArticleChain，继承自Chain基类
+class WikiArticleChain(Chain):
+    """
+    开发一个wiki文章的生成器
+    """
+    prompt: BasePromptTemplate
+    llm: BaseLanguageModel
+    out_key: str = "text"
+
+    # @property注解，定义一个静态方法来获取输入键
+    @property
+    def input_keys(self) -> List[str]:
+        """
+        返回prompt所需的所有键
+        """
+        return self.prompt.input_variables
+    
+    # @property注解，定义一个静态方法来获取输出键
+    @property
+    def output_keys(self) -> List[str]:
+        """
+        将始终返回text键
+        """
+        return [self.out_key]
+    
+    # 定义链调用时的主要逻辑
+    def _call(
+            self,
+            inputs: Dict[str, Any],
+            run_manager: Optional[CallbackManagerForChainRun] = None,
+        ) -> Dict[str, Any]:
+        """
+        运行链
+        """
+        # 格式化输入的提示
+        prompt_value = self.prompt.format(**inputs)
+        # 使用llm生成文本
+        response = self.llm.generate([prompt_value], callbacks=run_manager.get_child() if run_manager else None)
+        if run_manager:
+            run_manager.on_text("wiki article is written")
+        
+        # 从response中提取生成的文本
+        generated_text = response.generations[0][0].text if response.generations else ""
+        return {self.out_key: generated_text}
+    
+    # 定义链的类型
+    @property
+    def _chain_type(self) -> str:
+        """链类型"""
+        return "wiki_article_chain"
+
+# 加载 .env 文件中的 API key
+load_dotenv(find_dotenv())
+api_key = os.getenv("DASHSCOPE_API_KEY")
+
+# 创建WikiArticleChain实例
+chain = WikiArticleChain(
+    prompt=PromptTemplate(
+        template="写一篇关于{topic}的维基百科形式的文章",
+        input_variables=["topic"]
+    ),
+    llm=Tongyi(
+        temperature=0,  # 设置温度参数，决定生成文本的多样性
+        model="Qwen-max",  # 指定模型
+        dashscope_api_key=api_key  # 使用加载的API key
+    )
+)
+
+# 运行链，生成关于"python"的文章
+result = chain({"topic": "python"})
+print(result)
+```
+
+![](./image/3.11.png)
+
+### 四种处理文档的预制链,轻松实现文档对话
+
+#### `Stuff document`
+
+![](./image/3.12.png)
+
+```python
+# 第一种:StuffChain
+# 是一个最常见的文档链,将文档直接塞进我们的prompt中,为LLM回答问题提供上下文资料,适合小文档场景
+
+# 导入模块
+from dotenv import find_dotenv, load_dotenv
+import os
+# 加载 API key
+load_dotenv(find_dotenv())
+api_key = os.getenv("DASHSCOPE_API_KEY")
+
+from langchain.chains.combine_documents.stuff import StuffDocumentsChain
+from langchain.chains import LLMChain
+from langchain.prompts import PromptTemplate
+from langchain.document_loaders import PyPDFLoader
+from langchain_community.chat_models import ChatTongyi
+
+loader = PyPDFLoader('./loader.pdf')
+# 查看一下我们读取到的文件
+# print(loader.load())
+
+prompt_template = """
+    对以下文字做简洁的总结:
+    {text}
+    简洁的总结:
+"""
+
+prompt = PromptTemplate.from_template(
+    prompt_template
+)
+
+llm = ChatTongyi(
+    model_name="qwen-vl-max",
+    temperature=0,
+    dashscope_api_key=api_key
+)
+llm_chain = LLMChain(
+    llm = llm,
+    prompt = prompt
+)
+
+stuff_chain = StuffDocumentsChain(
+    llm_chain = llm_chain,
+    document_variable_name="text"
+)
+
+docs = loader.load()
+print(stuff_chain.run(docs))
+```
+
+![](./image/3.14.png)
+
+可以看到这个`StuffDocumentChain`确实已经实现,而且实现起来是最简单的方式
+
+这里的话依旧给一个示例
+
+```python
+# 使用预封装好的load_summarize_chain
+from langchain.document_loaders import PyPDFLoader
+from langchain_community.chat_models import ChatTongyi
+from langchain.chains.summarize import load_summarize_chain
+
+loader = PyPDFLoader('./loader.pdf')
+docs = loader.load()
+llm = ChatTongyi(
+    model_name='qwen-vl-max',
+    temperature = 0,
+    prompt = prompt
+)
+
+chain = load_summarize_chain(
+    llm = llm,
+    chain_type= "stuff",
+    verbose = True
+)
+
+chain.run(docs)
+```
+
+然后我们来看下运行结果
+
+![](./image/3.15.png)
+
+#### `Refine documents chain`
+
+![](./image/3.13.png)
+
+`Refine documents chain`:适合就是在LLM上下文大小跟需要传入的`document`有一定差距的情况下,使用的.它的实现是迭代的方式,来构建响应.然后的话,因为是通过循环的引用LLM,将文档不断投喂,并产生各种中间答案,适合逻辑有上下文关联的文档,不适合交叉引用
+
+这里用一个示例,来讲解如何使用这个`Refine document chain`
+
+```python
+# 首先依旧先导入我们的模块
+# 导入模块
+from dotenv import find_dotenv, load_dotenv
+import os
+# 加载 API key
+load_dotenv(find_dotenv())
+api_key = os.getenv("DASHSCOPE_API_KEY")
+
+from langchain.prompts import PromptTemplate
+from langchain.document_loaders import PyPDFLoader
+from langchain_community.chat_models import ChatTongyi
+from langchain.text_splitter import CharacterTextSplitter
+from langchain.chains.summarize import load_summarize_chain
+
+# 加载文档
+loader = PyPDFLoader('./example/fake.pdf')
+docs = loader.load()
+
+# 对文档进行切分
+text_splitter = CharacterTextSplitter(
+    chunk_size=1000,
+    chunk_overlap=0
+)
+split_docs = text_splitter.split_documents(docs)
+
+# 创建一个提问问题的模版
+prompt_template = """
+    对以下文字做简要的总结:
+    {text}
+    简洁的总结:
+"""
+
+prompt = PromptTemplate.from_template(
+    prompt_template
+)
+
+# 发起提问的模版(核心)
+refine_template = (
+    "你的任务是产生最终的摘要\n"
+    "我们已经提供了一个到某个特定点的现有回答{existing_answer}\n"
+    "我们有机会通过下面的一些更多的上下文来完善现有的回答(仅在需要的时候使用).\n"
+    "--------------------------------------------\n"
+    "{text}\n"
+    "--------------------------------------------\n"
+    "根据新的上下文,用中文完善原始回答.\n"
+    "如果上下文没有用处,请返回原始回答.\n"
+)
+
+refine_prompt = PromptTemplate.from_template(
+    refine_template
+)
+
+# 构建一个llm
+llm = ChatTongyi(
+    model_name= 'qwen-vl-max',
+    dashscope_api_key = api_key,
+    temperature = 0
+)
+
+chain = load_summarize_chain(
+    llm = llm,
+    # 设置类型
+    chain_type= 'refine',
+    # 设置问题模版
+    question_prompt = prompt,
+    # 设置回答模版
+    refine_prompt = refine_prompt,
+    # 是否返回中间步骤
+    return_intermediate_steps = True,
+    # 设置输入
+    input_key = 'documents',
+    output_key = 'output_text'
+)
+
+# 通过上面的设置后,我们来看下成功
+# 唤醒一下先(设置一个仅返回输出结果)
+result = chain({'documents': split_docs}, return_only_outputs=True)
+
+# 首先,我们看下就是迭代过程中的中间每一代
+# print("\n\n".join(result['intermediate_steps'][:3]))
+print(result['output_text'])
+```
+
+🚧:***这里的话,大家注意,我文档进行了一个更换,因为国内llm有那个敏感词过滤,不知道为什么出现400Error,message提示出现了敏感词***
+
+然后,没什么影响,我们看下结果
+
+![](./image/3.16.png)
+
+OK,看来是能够不触发敏感词了,然后,我们来看下迭代的每一代的变化是咋样的吧
+
+![](./image/3.17.png)
+
+#### `Map reduce`
+
+![](./image/3.18.png)
+
+还有一张官网的图
+
+![](./image/3.19.png)
+
+我们用代码来讲解这张图表达的意思
+
+```python
+# 导入模块
+from langchain.chains import MapReduceDocumentsChain
+from langchain.chains import ReduceDocumentsChain
+from langchain.chains.combine_documents.stuff import StuffDocumentsChain
+from langchain.prompts import PromptTemplate
+from langchain_community.chat_models import ChatTongyi
+from langchain.document_loaders import PyPDFLoader
+from langchain.text_splitter import CharacterTextSplitter
+
+# 加载env file
+from dotenv import find_dotenv, load_dotenv
+import os
+# 加载 API key
+load_dotenv(find_dotenv())
+api_key = os.getenv("DASHSCOPE_API_KEY")
+
+# load pdf
+loader = PyPDFLoader("./example/fake.pdf")
+docs = loader.load()
+# print(docs)
+
+# 对文档进行切割
+text_splitter = CharacterTextSplitter(
+    chunk_size = 1000,
+    chunk_overlap = 0
+)
+
+split_docs = text_splitter.split_documents(docs)
+# print(split_docs)
+
+# 设置我们的mapChain
+map_template = """
+    对以下文字做简洁的总结:
+    '{content}'
+    简洁的总结:
+"""
+map_prompt = PromptTemplate.from_template(map_template)
+
+llm = ChatTongyi(
+    model_name = "qwen-vl-max",
+    temperature = 0,
+    dashscope_api_key = api_key
+)
+map_chain = LLMChain(
+    llm = llm,
+    prompt = map_prompt
+)
+
+# reduceChain
+reduce_template = """
+    以下是一个摘要的集合:
+    {doc_summaries}
+    将上面摘要与所有关键细节进行总结.
+    总结:
+"""
+reduce_prompt = PromptTemplate.from_template(reduce_template)
+reduce_chain = LLMChain(
+    prompt = reduce_prompt,
+    llm = llm
+)
+stuff_chain = StuffDocumentsChain(
+    llm_chain = reduce_chain,
+    document_variable_name = "doc_summaries"
+)
+
+reduce_final_chain = ReduceDocumentsChain(
+    combine_documents_chain = stuff_chain,
+    # collapse_documents_chain的作用就是判断token是否会超过我们设置的max值,也就是4000,当超过的时候,切换到下一个stuff_chain
+    collapse_documents_chain = stuff_chain,
+    token_max = 4000
+)
+
+# map reduce chain
+map_reduce_chain = MapReduceDocumentsChain(
+    llm_chain = map_chain,
+    document_variable_name= "content",
+    reduce_documents_chain= reduce_final_chain,
+)
+
+# 激活我们的chain
+summary = map_reduce_chain.run(split_docs)
+print(summary)
+```
+
+结果是这样的
+
+![](./image/3.20.png)
