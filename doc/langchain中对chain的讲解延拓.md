@@ -871,3 +871,750 @@ print(summary)
 结果是这样的
 
 ![](./image/3.20.png)
+
+#### `Map re-rank documents chain`
+
+![](./image/3.21.png)
+
+> rerank的时候，会让文档列表中的每一个文档都来回答用户问题，每个文档都会返回答案和自信心分数，分数最高的答案会被列为最终答案。这个特别适合大海捞针，当你有比较多文档，而你问的问题内容包含在某个特定文档内，这个时候rerank就可以把它找出来，而不是综合所有文档的答案来模糊的回答。
+
+这里我依旧使用示例来讲解
+
+```python
+# 首先导入必要的模块
+from langchain.chains.qa_with_sources import load_qa_with_sources_chain
+from langchain.document_loaders import PyPDFLoader
+from langchain_community.chat_models import ChatTongyi
+from langchain.text_splitter import CharacterTextSplitter
+
+# 导入env文件
+from dotenv import find_dotenv, load_dotenv
+import os
+# 加载 API key
+load_dotenv(find_dotenv())
+api_key = os.getenv("DASHSCOPE_API_KEY")
+
+# 定义一个llm
+llm = ChatTongyi(
+    model_name = "qwen-vl-max",
+    dashscope_api_key = api_key,
+    temperature = 0
+)
+
+# 加载文档
+laoder = PyPDFLoader('./example/fake.pdf')
+docs = laoder.load()
+
+# 对文档进行一个切割
+text_splitter = CharacterTextSplitter(
+    chunk_size = 500,
+    chunk_overlap = 0
+)
+split_docs = text_splitter.split_documents(docs)
+
+# 创建chain
+chain = load_qa_with_sources_chain(
+    ChatTongyi(
+        temperature = 0,
+        dashscope_api_key = api_key,
+        model_name = "qwen-vl-max"
+    ),
+    chain_type = "map_rerank",
+    metadata_keys = ['source'],
+    return_intermediate_steps = True
+)
+
+print(chain)
+```
+
+我在这里打印下结果
+
+```text
+Output:
+Ignoring wrong pointing object 6 0 (offset 0)
+llm_chain=LLMChain(prompt=PromptTemplate(input_variables=['context', 'question'], output_parser=RegexParser(regex='(.*?)\\nScore: (\\d*)', output_keys=['answer', 'score']), template="Use the following pieces of context to answer the question at the end. If you don't know the answer, just say that you don't know, don't try to make up an answer.\n\nIn addition to giving an answer, also return a score of how fully it answered the user's question. This should be in the following format:\n\nQuestion: [question here]\nHelpful Answer: [answer here]\nScore: [score between 0 and 100]\n\nHow to determine the score:\n- Higher is a better answer\n- Better responds fully to the asked question, with sufficient level of detail\n- If you do not know the answer based on the context, that should be a score of 0\n- Don't be overconfident!\n\nExample #1\n\nContext:\n---------\nApples are red\n---------\nQuestion: what color are apples?\nHelpful Answer: red\nScore: 100\n\nExample #2\n\nContext:\n---------\nit was night and the witness forgot his glasses. he was not sure if it was a sports car or an suv\n---------\nQuestion: what type was the car?\nHelpful Answer: a sports car or an suv\nScore: 60\n\nExample #3\n\nContext:\n---------\nPears are either red or orange\n---------\nQuestion: what color are apples?\nHelpful Answer: This document does not answer the question\nScore: 0\n\nBegin!\n\nContext:\n---------\n{context}\n---------\nQuestion: {question}\nHelpful Answer:"), llm=ChatTongyi(client=<class 'dashscope.aigc.multimodal_conversation.MultiModalConversation'>, model_name='qwen-vl-max', dashscope_api_key=SecretStr('**********'))) document_variable_name='context' rank_key='score' answer_key='answer' metadata_keys=['source'] return_intermediate_steps=True
+```
+
+这里的话,引用官方的这chain的prompt的一些定义模版
+
+```text
+"""
+Use the following pieces of context to answer the question in chinese at the end. If you don't know the answer, just say that you don't know, don't try to make up an answer.\n\n
+In addition to giving an answer, also return a score of how fully it answered the user's question. This should be in the following format:\n\n
+Question: [question here]\n
+Helpful Answer: [answer here]\n
+Score: [score between 0 and 100]\n\n
+How to determine the score:\n
+- Higher is a better answer\n
+- Better responds fully to the asked question, with sufficient level of detail\n
+- If you do not know the answer based on the context, that should be a score of 0\n
+- Don't be overconfident!\n\n
+Example #1\n\n
+Context:\n
+---------\n
+Apples are red\n
+---------\n
+Question: what color are apples?\n
+Helpful Answer: red\n
+Score: 100\n\n
+Example #2\n\n
+Context:\n
+---------\n
+it was night and the witness forgot his glasses. he was not sure if it was a sports car or an suv\n
+---------\n
+Question: what type was the car?\n
+Helpful Answer: a sports car or an suv\n
+Score: 60\n\n
+Example #3\n\n
+Context:\n---------\n
+Pears are either red or orange\n
+---------\n
+Question: what color are apples?\n
+Helpful Answer: This document does not answer the question\n
+Score: 0\n\n
+Begin!\n\n
+Context:\n
+---------\n
+{context}\n
+---------\n
+Question: {question}\n
+Helpful Answer:"""
+```
+
+OK,让我们补充完整示例
+
+```python
+# 首先导入必要的模块
+from langchain.chains.qa_with_sources import load_qa_with_sources_chain
+from langchain.document_loaders import PyPDFLoader
+from langchain_community.chat_models import ChatTongyi
+from langchain.text_splitter import CharacterTextSplitter
+
+# 导入env文件
+from dotenv import find_dotenv, load_dotenv
+import os
+# 加载 API key
+load_dotenv(find_dotenv())
+api_key = os.getenv("DASHSCOPE_API_KEY")
+
+# 定义一个llm
+llm = ChatTongyi(
+    model_name = "qwen-vl-max",
+    dashscope_api_key = api_key,
+    temperature = 0
+)
+
+# 加载文档
+laoder = PyPDFLoader('./example/fake.pdf')
+docs = laoder.load()
+
+# 对文档进行一个切割
+text_splitter = CharacterTextSplitter(
+    chunk_size = 500,
+    chunk_overlap = 0
+)
+split_docs = text_splitter.split_documents(docs)
+
+# 创建chain
+chain = load_qa_with_sources_chain(
+    ChatTongyi(
+        temperature = 0,
+        dashscope_api_key = api_key,
+        model_name = "qwen-vl-max"
+    ),
+    chain_type = "map_rerank",
+    metadata_keys = ['source'],
+    return_intermediate_steps = True
+)
+
+# print(chain)
+
+# 提出问题
+query = "What is this document talk about? answer by chinese"
+result = chain({"input_documents": split_docs, "question": query}, return_only_outputs=True)
+result
+```
+
+可以,看到输出结果
+
+![](./image/3.22.png)
+
+是以打分的形式出现的,输出的也是打分最高的那一段.
+
+当然,我们也可以关闭仅输出文本信息,来看到里面的详细过程
+
+![](./image/3.23.png)
+
+到这里的话,四种处理文档的预制链就基本讲完了,相信通过实际使用,应该会有自己的理解
+
+### Memory工具使用
+
+> 在这里的话,为什么要使用Menory工具呢,因为LLM,通常是无状态的,无法记忆上下文
+
+其实,langchain已经内置了一整套的解决方案,我们只需要使用就行
+
+![](./image/3.24.png)
+
+![](./image/3.25.png)
+
+***不同的Memory工具***
+
+- 利用内存实现的短时记忆
+- 利用`Entity memory`构建实体记忆
+- 利用知识图谱来构建记忆
+- 利用对话摘要来兼容内存中的长对话
+- 利用token来刷新内存缓冲区
+- 使用向量数据库实现长时记忆
+
+接下来,我将在示例中,展示上面不同的Memory工具如何使用,以及具体的细节
+
+先来个简单一点的
+
+#### 利用内存实现的短时记忆
+
+直接上示例
+
+```python
+from langchain.memory import ConversationBufferMemory
+
+memory = ConversationBufferMemory()
+memory.chat_memory.add_user_message("hi!i am southaki")
+memory.chat_memory.add_ai_message("hi!i am your ai assistant,can you help me?")
+
+memory.load_memory_variables({})
+```
+
+来看下结果
+
+![](./image/3.26.png)
+
+> 这里调用的是`langchain.memory`关于`ConversationBufferMemory`的方法,然后保存进我们的内存里,再在需要的时候使用
+
+我们稍微进化一下,来实现一个**一个最近对话的窗口,超过窗口条数的对话,将会从内存中释放出去**
+
+示例:
+
+```python
+# 我们也可以实现一个最近对话的窗口,超过窗口条数的对话,将会从内存中释放出去
+# 首先依旧是导入相应的模块
+from langchain.memory import ConversationBufferMemory
+from langchain.memory import ConversationBufferWindowMemory
+
+# 这里我们需要传入一个k值,这个k值表明窗口允许的最大条数是多少,这里我分别给你演示一下区别
+# memory = ConversationBufferWindowMemory(k=1)
+# output: {'history': 'Human: not too bad\nAI: glad to hear it'}
+memory = ConversationBufferWindowMemory(k=2)
+
+memory.save_context({"input": "hi,i am southaki"}, {"output": "whats up"})
+memory.save_context({"input": "not too bad"}, {"output": "glad to hear it"})
+
+memory.load_memory_variables({})
+```
+
+![](./image/3.27.png)
+
+#### 利用`Entity memory`构建实体记忆
+
+实体记忆,又称`实体清单`,来看下具体实现
+
+```python
+# 导入模块
+from dotenv import find_dotenv, load_dotenv
+import os
+# 加载 API key
+load_dotenv(find_dotenv())
+api_key = os.getenv("DASHSCOPE_API_KEY")
+
+from langchain.llms import Tongyi
+from langchain.memory import ConversationEntityMemory
+
+llm = Tongyi(
+    dashscope_api_key = api_key,
+    temperature = 0,
+    model = 'Qwen-max'
+)
+
+memory = ConversationEntityMemory(
+    llm = llm
+)
+_input = {
+    "input": "华南理工大学和华南师范大学华南农业大学是华南地区的重点大学,合成华南三大"
+}
+memory.load_memory_variables(_input)
+```
+
+来看下成果
+
+![](./image/3.28.png)
+
+我们看到,构建出来了三个实体:分别是上面的三个大学名字,可以看到我们的构建是很成功的,那么我们来加入一些补充 
+
+```python
+# 提取模拟输入,与接下来的输入发送给LLM
+# 导入模块
+from dotenv import find_dotenv, load_dotenv
+import os
+# 加载 API key
+load_dotenv(find_dotenv())
+api_key = os.getenv("DASHSCOPE_API_KEY")
+
+from langchain.llms import Tongyi
+from langchain.memory import ConversationEntityMemory
+
+llm = Tongyi(
+    dashscope_api_key = api_key,
+    temperature = 0,
+    model = 'Qwen-max'
+)
+
+memory = ConversationEntityMemory(
+    llm = llm
+)
+_input = {
+    "input": "华南理工大学和华南师范大学华南农业大学是华南地区的重点大学,合成华南三大"
+}
+memory.load_memory_variables(_input)
+memory.save_context(
+    _input,
+    {
+        "output": "听起来不错,我也想去这三个大学"
+    }
+)
+
+memory.load_memory_variables({"input": "华南三角是谁?"})
+```
+
+![](./image/3.29.png)
+
+#### 使用知识图谱来构建记忆
+
+依旧是一个示例
+
+```python
+# 首先依旧导入模块
+from langchain.llms import Tongyi
+from langchain.memory import ConversationKGMemory
+
+llm = Tongyi(
+    temperature = 0,
+    dashscope_api_key = api_key,
+    model = 'Qwen-max'
+)
+
+memory = ConversationKGMemory(
+    llm = llm,
+    return_messages= True
+)
+
+# 构建对话
+memory.save_context(
+    {
+        "input": "please find SouthAki"
+    },
+    {
+        "output": "who is SouthAki"
+    }
+)
+
+memory.save_context(
+    {
+        "input": "SouthAki是一位前端工程师"
+    },
+    {
+        "output": "ok, i remmember"
+    }
+)
+```
+
+通过上面我们完成构建,现在来激活看下有什么用处
+
+- 我们可以继续提问下一个问题
+
+	```python
+	memory.load_memory_variables({"input": 'SouthAki是谁'})
+	```
+
+	![](./image/3.30.png)
+
+- 然后,在我们的知识图谱里,我们也是可以提取实体的
+
+	```python
+	memory.get_current_entities("SouthAki最喜欢做什么事情")
+	```
+
+	![](./image/3.31.png)
+
+- 我们也可以获得到这个问题的三元知识组`主题,动作,干什么`
+
+	```python
+	memory.get_knowledge_triplets("SouthAki最喜欢coding")
+	```
+
+	![](./image/3.32.png)
+
+
+
+#### 长对话在内存中的处理方式
+
+> 有两种:
+>
+> 1. *总结摘要*
+> 2. *token计算*
+
+两种我们都做个展示
+
+```python
+# 使用上面的模版
+from langchain.llms import Tongyi
+from langchain.memory import ConversationSummaryMemory
+
+llm = Tongyi(
+    temperature = 0,
+    dashscope_api_key = api_key,
+    model = 'Qwen-max'
+)
+
+memory = ConversationSummaryMemory(
+    llm = llm,
+    return_messages= True
+)
+
+# 构建对话
+memory.save_context(
+    {
+        "input": "please find SouthAki"
+    },
+    {
+        "output": "who is SouthAki"
+    }
+)
+
+memory.save_context(
+    {
+        "input": "SouthAki是一位前端工程师"
+    },
+    {
+        "output": "ok, i remmember"
+    }
+)
+
+memory.load_memory_variables({}) # 看一下总结出来的成果
+
+messages = memory.chat_memory.messages
+print(messages) # 打印一下我们提交给大语言模型的聊天记录
+
+memory.predict_new_summary(messages,"") # 产生新的摘要
+```
+
+![](./image/3.33.png)
+
+OK,我们下面使用`ChatMessageHistory`来快速获得对话摘要
+
+```python
+from langchain.memory import ConversationSummaryMemory
+from langchain.memory import ChatMessageHistory
+from langchain.llms import Tongyi
+
+from dotenv import find_dotenv, load_dotenv
+import os
+# 加载 API key
+load_dotenv(find_dotenv())
+api_key = os.getenv("DASHSCOPE_API_KEY")
+
+llm = Tongyi(
+    dashscope_api_key = api_key,
+    model = "Qwen-max",
+    temperature = 0
+)
+
+# 增加一点历史记录
+hisiory = ChatMessageHistory()
+hisiory.add_user_message("你好,我是南秋SouthAki!")
+hisiory.add_ai_message("你好,我是阿里开发的大语言模型Tongyi,请问我有什么可以帮到你的?")
+
+memory = ConversationSummaryMemory.from_messages(
+    llm = Tongyi(
+        temperature = 0,
+        model = "Qwen-max",
+        dashscope_api_key = api_key
+    ),
+    chat_memory= hisiory,
+    return_messages = True
+)
+
+memory.buffer # 总结了上面的对话的内容
+```
+
+![](./image/3.34.png)
+
+如果你想对上面的生成结构化数据,我们可以这样做
+
+```python
+from langchain.memory import ConversationSummaryMemory
+from langchain.memory import ChatMessageHistory
+from langchain.llms import Tongyi
+
+from dotenv import find_dotenv, load_dotenv
+import os
+# 加载 API key
+load_dotenv(find_dotenv())
+api_key = os.getenv("DASHSCOPE_API_KEY")
+
+llm = Tongyi(
+    dashscope_api_key = api_key,
+    model = "Qwen-max",
+    temperature = 0
+)
+
+# 增加一点历史记录
+hisiory = ChatMessageHistory()
+hisiory.add_user_message("你好,我是南秋SouthAki!")
+hisiory.add_ai_message("你好,我是阿里开发的大语言模型Tongyi,请问我有什么可以帮到你的?")
+
+# memory = ConversationSummaryMemory.from_messages(
+#     llm = Tongyi(
+#         temperature = 0,
+#         model = "Qwen-max",
+#         dashscope_api_key = api_key
+#     ),
+#     chat_memory= hisiory,
+#     return_messages = True
+# )
+
+# memory.buffer # 总结了上面的对话的内容
+
+memory = ConversationSummaryMemory(
+    llm = Tongyi(
+        model = "Qwen-max",
+        dashscope_api_key = api_key,
+        temperature = 0
+    ),
+    return_message = True,
+    buffer = 'The human, SouthAki, greets the AI, and the AI, Tongyi, introduces itself as a large language model developed by Alibaba, asking how it can assist.',
+    chat_memory= hisiory
+)
+
+memory.load_memory_variables({})
+```
+
+![](./image/3.35.png)
+
+#### 利用token来刷新内存缓冲区
+
+接下来这个是比较好用的`ConversationSummaryBufferMemory`
+
+这个好处是当对话持续进行的时候且对话内容很多的时候,它会根据token的数量来自动判断是否需要进行摘要
+
+当token数量超过阈值的时候,会自动进行摘要
+
+在缓冲区中,会保存最近的k条对话
+
+比较久的对话会被删除,在删除前会进行摘要
+
+```python
+# 首先依旧导入我们的模块
+from dotenv import find_dotenv, load_dotenv
+import os
+# 加载 API key
+load_dotenv(find_dotenv())
+api_key = os.getenv("DASHSCOPE_API_KEY")
+
+from langchain.memory import ConversationSummaryBufferMemory
+from langchain.llms import Tongyi
+
+llm = Tongyi(
+    dashscope_api_key = api_key,
+    model = "Qwen-max",
+    temperature = 0
+)
+
+memory = ConversationSummaryBufferMemory(
+    llm = llm,
+    max_token_limit= 10,
+    return_messages = True
+)
+
+memory.save_context(
+    {
+        "input": "你好,帮我找下南秋SouthAki"
+    },
+    {
+        "output": "sorry, who is 南秋SouthAki?"
+    }
+)
+
+memory.save_context(
+    {
+        "input": "南秋SouthAki是一个前端开发工程师"
+    },
+    {
+        "output": "ok,i know"
+    }
+)
+
+memory.save_context(
+    {
+        "input": "今天他要讲一门关于华为仓颉编程的课程"
+    },
+    {
+        "output": "ok,i know.do you need more information?"
+    }
+)
+
+memory.load_memory_variables({})
+```
+
+![](./image/3.36.png)
+
+ok ,下面这个是token计算的内容
+
+使用到了`Conversation Token Buffer`
+
+运用token,来决定什么时候刷新内存
+
+```python
+from dotenv import find_dotenv, load_dotenv
+import os
+# 加载 API key
+load_dotenv(find_dotenv())
+api_key = os.getenv("DASHSCOPE_API_KEY")
+
+from langchain.memory import ConversationTokenBufferMemory
+from langchain.llms import Tongyi
+
+llm = Tongyi(
+    model = "Qwen-max",
+    dashscope_api_key = api_key,
+    temperature = 0
+)
+
+memory = ConversationTokenBufferMemory(
+    llm = llm,
+    max_token_limit= 150
+)
+
+memory.save_context(
+    {
+        "input": "你好,帮我找下南秋SouthAki"
+    },
+    {
+        "output": "sorry, who is 南秋SouthAki?"
+    }
+)
+
+memory.save_context(
+    {
+        "input": "南秋SouthAki是一个前端开发工程师"
+    },
+    {
+        "output": "ok,i know"
+    }
+)
+
+memory.save_context(
+    {
+        "input": "今天他要讲一门关于华为仓颉编程的课程"
+    },
+    {
+        "output": "ok,i know.do you need more information?"
+    }
+)
+
+memory.save_context(
+    {
+        "input": "不需要资料了,谢谢"
+    },
+    {
+        "output": "All right, see you next time."
+    }
+)
+
+memory.load_memory_variables({})
+```
+
+![](./image/3.37.png)
+
+以上的都是短时记忆的实现
+
+但是,当我们关机等的时候,我们有些数据不限丢失,于是我们需要实现长时记忆,来保存我们的数据
+
+langchain是使用向量数据库来存储之前的对话内容,有的向量数据库服务还提供自动摘要,每次对话的时候,都会从向量数据库里查询最相关的文档或者历史对话
+
+#### 使用向量数据库实现长时记忆
+
+实现
+
+```python
+# 首先导入我们的模块
+from langchain.embeddings import HuggingFaceEmbeddings
+from langchain.memory import ConversationBufferMemory
+from langchain.vectorstores import FAISS
+
+memory = ConversationBufferMemory()
+memory.save_context(
+    {
+        "input": "你好,帮我找下南秋SouthAki"
+    },
+    {
+        "output": "sorry, who is 南秋SouthAki?"
+    }
+)
+
+memory.save_context(
+    {
+        "input": "南秋SouthAki是一个前端开发工程师"
+    },
+    {
+        "output": "ok,i know"
+    }
+)
+
+memory.save_context(
+    {
+        "input": "今天他要讲一门关于华为仓颉编程的课程"
+    },
+    {
+        "output": "ok,i know.do you need more information?"
+    }
+)
+
+memory.save_context(
+    {
+        "input": "不需要资料了,谢谢"
+    },
+    {
+        "output": "All right, see you next time."
+    }
+)
+
+vectorstore = FAISS.from_texts(
+    memory.buffer.split("\n"),
+    HuggingFaceEmbeddings(model_name="BAAI/bge-small-en")
+)
+
+FAISS.save_local(vectorstore, "test_faiss")
+
+FAISS.load_local("test_faiss", HuggingFaceEmbeddings(model_name="BAAI/bge-small-en"),allow_dangerous_deserialization=True).similarity_search("SouthAki做什么职业?")
+```
+
+![](./image/3.38.png)
+
+检验一下:
+
+```python
+# 我们来测试一下是否有成功写入向量数据库
+from langchain.vectorstores import FAISS
+from langchain.embeddings import HuggingFaceEmbeddings
+from langchain.memory import VectorStoreRetrieverMemory
+
+r1 = FAISS.load_local("test_faiss", embeddings=HuggingFaceEmbeddings(model_name="BAAI/bge-small-en"),allow_dangerous_deserialization=True)
+r2 = r1.as_retriever(
+    search_kwargs={"k": 1}
+)
+
+memory2 = VectorStoreRetrieverMemory(retriever=r2)
+
+memory2.load_memory_variables({"prompt": "SouthAki是什么职业"})
+```
+
+![](./image/3.39.png)
