@@ -740,7 +740,7 @@ Output:`{'answer': 'George Washington was born in 1732 and died in 1799.', 'scor
 
 ##### 根据长度要求,智能选择示例
 
-官方文档: `https://python.langchain.com.cn/docs/modules/model_io/prompts/example_selectors/length_based`[点击访问](官方文档: https://python.langchain.com.cn/docs/modules/model_io/prompts/example_selectors/length_based)
+官方文档: `https://python.langchain.com.cn/docs/modules/model_io/prompts/example_selectors/length_based`[点击访问](https://python.langchain.com.cn/docs/modules/model_io/prompts/example_selectors/length_based)
 
 这里我以官方文档进行演示
 

@@ -1618,3 +1618,429 @@ memory2.load_memory_variables({"prompt": "SouthAki是什么职业"})
 ```
 
 ![](./image/3.39.png)
+
+#### 在链上使用Memory
+
+这里的话,有五个在`chain`上使用`Memory`的知识点
+
+- LLMChain
+- Conversation
+- 自定义
+- 同一个链合并使用多个记忆
+- 给多参数链增加记忆
+
+那么这里第一个我们来实现的就是关于`LLMChain`的`Memory`
+
+##### LLMChain
+
+依旧使用示例来讲解
+
+```python
+# 首先依旧导入模块
+from dotenv import find_dotenv, load_dotenv
+import os
+# 加载 API key
+load_dotenv(find_dotenv())
+api_key = os.getenv("DASHSCOPE_API_KEY")
+
+from langchain.llms import Tongyi
+from langchain.memory import ConversationBufferMemory
+from langchain.prompts import PromptTemplate
+from langchain.chains import LLMChain
+
+# 自定义一个模版
+template = """
+    你是一个可以和人类对话的AI机器人
+    {chat_history}
+    人类:{human_input}
+    机器人:
+"""
+
+prompt = PromptTemplate(
+    input_variables=["chat_history", "human_input"],
+    template=template,
+)
+memory = ConversationBufferMemory(
+    memory_key= "chat_history"
+)
+
+llm = Tongyi(
+    dashscope_api_key = api_key,
+    temperature = 0,
+    model = "Qwen-max"
+)
+
+chain = LLMChain(
+    llm = llm,
+    memory = memory,
+    prompt = prompt,
+    verbose = True
+)
+
+chain.predict(human_input= '你好')
+chain.predict(human_input= '我叫SouthAki,是一个前端工程师,你呢')
+chain.predict(human_input= '我喜欢玩游戏,最喜欢玩Minecraft,你知道这个游戏吗?')
+chain.predict(human_input= '你还记得我叫什么名字吗?')
+```
+
+![](./image/3.40.png)
+
+可以看到我们的输出是带有我们的Memory记忆能力的
+
+
+
+接下来的是我们对话的`chatModel`
+
+示例如下:
+
+```python
+# 首先依旧是导入模块
+from dotenv import find_dotenv, load_dotenv
+import os
+# 加载 API key
+load_dotenv(find_dotenv())
+api_key = os.getenv("DASHSCOPE_API_KEY")
+
+from langchain_community.chat_models import ChatTongyi
+from langchain.memory import ConversationBufferMemory
+from langchain.prompts import (
+    ChatPromptTemplate,
+    HumanMessagePromptTemplate,
+    MessagesPlaceholder
+)
+from langchain.chains import LLMChain
+from langchain.schema import SystemMessage
+
+# 定义提问提示模版
+prompt = ChatPromptTemplate.from_messages(
+    [
+        SystemMessage(
+            content = "你好,我是一个可以和人类进行自然语言对话的AI机器人",
+            role = "system"
+        ),
+        # Meassagesplaceholder: 是一个占位符,这里的作用是传入我们的历史聊天信息
+        MessagesPlaceholder(
+            variable_name= "chat_history"
+        ),
+        HumanMessagePromptTemplate.from_template(
+            "{human_input}"
+        )
+    ]
+)
+
+# 先来看看格式是否符合我们预期
+# print(prompt.format_prompt(human_input="你好",chat_history = []))
+
+memory = ConversationBufferMemory(
+    memory_key= "chat_history",
+    return_messages = True
+)
+
+llm = ChatTongyi(
+    dashscope_api_key = api_key,
+    temperature = 0,
+    model_name = "qwen-vl-max"
+)
+
+chain = LLMChain(
+    llm = llm,
+    memory = memory,
+    prompt = prompt,
+    verbose = True
+)
+
+# chain.predict(human_input= '你好')
+chain.predict(human_input= '我叫SouthAki,是一个前端工程师,你呢')
+chain.predict(human_input= '我喜欢玩游戏,最喜欢玩Minecraft,你知道这个游戏吗?')
+chain.predict(human_input= '你还记得我叫什么名字吗?')
+```
+
+![](./image/3.41.png)
+
+##### ConversationChain
+
+下一个的是对话链`ConversationChain`
+
+使用示例
+
+```python
+# 我们来尝试一下,使用预制链提供的东西
+# 首先导入模块
+from langchain.chains import ConversationChain
+from langchain.llms import Tongyi
+from langchain.memory import ConversationBufferMemory
+
+from dotenv import find_dotenv, load_dotenv
+import os
+# 加载 API key
+load_dotenv(find_dotenv())
+api_key = os.getenv("DASHSCOPE_API_KEY")
+
+# 依旧是定义我们的大模型
+llm = Tongyi(
+    model = "Qwen",
+    dashscope_api_key = api_key,
+    temperature = 0
+)
+memory = ConversationBufferMemory(
+    return_messages=True,
+    memory_key= "history"
+)
+chain = ConversationChain(
+    llm = llm,
+    memory = memory,
+    verbose = True
+)
+
+chain.predict(input="你好")
+chain.predict(input="我叫SouthAki,你呢")
+chain.predict(input="今天天气真好,我感觉我想去北京旅游")
+chain.predict(input="帮我做个一日游攻略")
+```
+
+![](./image/3.42.png)
+
+可以看到使用预制链确实很轻松的实现了
+
+但是某些时候,我们需要通过定制,使得llm输出更符合我们的预期
+
+##### 自定义
+
+```python
+# 自定义一下,对其进行覆盖
+# 首先依旧导入我们的模块
+from langchain.chains import ConversationChain
+from langchain.memory import ConversationBufferMemory
+from langchain.prompts import PromptTemplate
+from langchain.llms import Tongyi
+
+from dotenv import find_dotenv, load_dotenv
+import os
+# 加载 API key
+load_dotenv(find_dotenv())
+api_key = os.getenv("DASHSCOPE_API_KEY")
+
+# 定义大模型
+llm = Tongyi(
+    dashscope_api_key = api_key,
+    temperature = 0,
+    model = "Qwen-max"
+)
+
+# 设置问题模版
+template = """
+    下面是一段AI与人类的对话,AI会针对人类的问题,提供尽可能详细回答,如果AI不知道答案,会直接回复'Soory, I don't know the answer.'
+    当前对话:{history}
+    human:{input}
+    AI助手:
+"""
+
+prompt = PromptTemplate(
+    input_variables=["history", "input"],
+    template=template
+)
+
+chain = ConversationChain(
+    llm = llm,
+    memory = ConversationBufferMemory(
+        # 这里为什么要有一个ai_prefix呢?
+        # 因为我们上面修改了那个问题的信息回复人,如果不用占位符,就会导致报错
+        ai_prefix = "AI助手",
+        return_messages = True
+    ),
+    prompt = prompt,
+    verbose = True
+)
+
+# 测试 提出问题
+chain.predict(input = "你好")
+chain.predict(input = "今天天气真好,适合旅游啊")
+chain.predict(input = "我最近想去南京,你有什么推荐的吗,帮我做个一日游攻略出来")
+chain.predict(input = "我叫什么名字?")
+```
+
+![](./image/3.43.png)
+
+##### 同一个链合并使用多个记忆
+
+```python
+# 首先还是导入模块
+from dotenv import find_dotenv, load_dotenv
+import os
+# 加载 API key
+load_dotenv(find_dotenv())
+api_key = os.getenv("DASHSCOPE_API_KEY")
+
+from langchain.llms import Tongyi
+from langchain.chains import ConversationChain
+from langchain.memory import (
+    ConversationBufferMemory,
+    ConversationSummaryMemory,
+    CombinedMemory
+)
+from langchain.prompts import PromptTemplate
+
+# 定义大模型
+llm = Tongyi(
+    dashscope_api_key = api_key,
+    model = "Qwen-max",
+    temperature = 0
+)
+
+# 使用ConversationSummaryMemory对对话进行总结
+summary = ConversationSummaryMemory(
+    llm= llm,
+    input_key= 'input'
+)
+
+# 使用ConversationBufferMemory对对话进行缓存
+cov_memory = ConversationBufferMemory(
+    memory_key= 'history_now',
+    input_key= 'input'
+)
+
+memory = CombinedMemory(
+    memories=[summary, cov_memory]
+)
+
+template = """
+    下面是一段AI与人类的对话,AI会针对人类的问题,尽力的给出详细答案,如果不知道问题的答案,会回答'Sorry, I don't know the answer to that question.'
+    之前的对话摘要:{history}
+    当前对话:{history_now}
+    Human:{input}
+    AI:
+"""
+
+prompt = PromptTemplate(
+    template= template,
+    input_variables=['history', 'history_now', 'input']
+)
+
+chain = ConversationChain(
+    llm = llm,
+    memory = memory,
+    prompt = prompt,
+    verbose = True
+)
+
+chain.run("你好")
+chain.run("我想知道加密货币的相关知识")
+chain.run("好厉害啊,那你对BTC有认识吗？")
+chain.run("那ETH呢?")
+```
+
+![](./image/3.44.png)
+
+##### 给多参数链增加记忆
+
+```python
+# 首先导入模块
+from dotenv import find_dotenv, load_dotenv
+import os
+# 加载 API key
+load_dotenv(find_dotenv())
+api_key = os.getenv("DASHSCOPE_API_KEY")
+
+from langchain.embeddings import HuggingFaceEmbeddings
+from langchain.vectorstores import Chroma
+from langchain.text_splitter import CharacterTextSplitter
+
+with open('./letter.txt') as f:
+    text = f.read()
+
+    # 对文本进行切分
+    text_splitter = CharacterTextSplitter(chunk_size=1000, separator="\n")
+    texts = text_splitter.split_text(text)
+
+    # 使用HuggingFaceEmbeddings进行向量化
+    embeedings = HuggingFaceEmbeddings(
+        model_name="BAAI/bge-small-en"
+    )
+    # 使用chroma去存储向量
+    docsearch = Chroma.from_texts(
+        texts,
+        embeedings
+    )
+    query = "这家公司有什么新策略?"
+    docs = docsearch.similarity_search(query = query)
+```
+
+当上面成功后,我们需要构建一个问答对话链
+
+```python
+# 首先导入模块
+from dotenv import find_dotenv, load_dotenv
+import os
+# 加载 API key
+load_dotenv(find_dotenv())
+api_key = os.getenv("DASHSCOPE_API_KEY")
+
+from langchain.embeddings import HuggingFaceEmbeddings
+from langchain.vectorstores import Chroma
+from langchain.text_splitter import CharacterTextSplitter
+
+with open('./letter.txt') as f:
+    text = f.read()
+
+    # 对文本进行切分
+    text_splitter = CharacterTextSplitter(chunk_size=1000, separator="\n")
+    texts = text_splitter.split_text(text)
+
+    # 使用HuggingFaceEmbeddings进行向量化
+    embeedings = HuggingFaceEmbeddings(
+        model_name="BAAI/bge-small-en"
+    )
+    # 使用chroma去存储向量
+    docsearch = Chroma.from_texts(
+        texts,
+        embeedings
+    )
+    query = "这家公司有什么新策略?"
+    docs = docsearch.similarity_search(query = query)
+
+# 首先依旧是导入模块
+from langchain.chains.question_answering import load_qa_chain
+from langchain.llms import Tongyi
+from langchain.prompts import PromptTemplate
+from langchain.memory import ConversationBufferMemory
+
+# 定义大模型
+llm = Tongyi(
+    model = "Qwen-max",
+    dashscope_api_key = api_key,
+    temperature = 0
+)
+
+template = """
+    下面是一段AI与人类的对话,AI会针对人类的问题,提供尽可能详细的回答,如果AI不知道这个问题的答案,会返回一段字符串'Sorry, I don't know the answer.',依旧参考一下相关文档以及历史对话信息,AI会据此组织最终回答的内容.{context}
+    {chat_history}
+    Human: {human_input}
+    AI:
+"""
+
+prompt = PromptTemplate(
+    template= template,
+    input_variables = ["context","chat_history","human_input"]
+)
+
+# 使用ConversationBufferMemory对对话进行缓存
+memory = ConversationBufferMemory(
+    memory_key= "chat_history",
+    input_key= "human_input",
+    return_messages= True
+)
+
+# 加载我们的对话链
+chain = load_qa_chain(
+    llm= llm,
+    memory= memory,
+    prompt= prompt,
+    verbose= True,
+    chain_type= "stuff"
+)
+
+# 调用一下上面的文档和我们的问答历史
+chain({"input_documents":docs,"human_input":"公司有什么新策略?"})
+```
+
+![](./image/3.45.png)
