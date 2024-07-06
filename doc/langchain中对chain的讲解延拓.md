@@ -2044,3 +2044,41 @@ chain({"input_documents":docs,"human_input":"公司有什么新策略?"})
 ```
 
 ![](./image/3.45.png)
+
+## 主要的预制链和Memory工具
+
+### 主要的预制链
+
+langchain其实预制了一些链,方便开发者去调用的,常用的有这些
+
+- LLMChain:***最常见的普通链***
+- LLMRequestsChain:***请求URL后回答链***
+- SequentialChain:***顺序执行链***
+- TransformationChain:***文档转换链***
+- RouterChain:***基本路由链***
+- MultiRouterChain:***多跳路由链***
+- <font color="red">load_chain:***使用loader加载各种预制链***</font>
+
+> 不过,上诉的各种链,在最新的langchain中将`chain`的概念慢慢抹除掉了,包括我们在上面演示的时候出现的一些问题,无法跑通
+>
+> 现在的话,langchain是做了一个hub平台,网址的话,上面的讲到了,可以根据自己的需求,自定义自己想要实现的功能的链,并且开源,以后我们只需要使用到`langchain.core`中的`loader_chain`,加载别人开源的各种链,就可以使用了
+>
+> 这里可以给大家看下langchain中内置的一些预制链
+>
+> GitHub官网开源项目中的chain部分跳转:[点击访问](https://github.com/langchain-ai/langchain/tree/master/libs/langchain/langchain/chains)
+>
+> ![](./image/3.46.png)
+>
+> 然后的话,还是`Memory`工具的部分,可以上文展示出来的部分是比较少的,并没有很全
+>
+> 可以看下官方的开源的项目中,关于langchain中关于Memory部分
+>
+> 网址调转:[点击访问](https://github.com/langchain-ai/langchain/tree/master/libs/langchain/langchain/memory/chat_message_histories)
+>
+> ![](./image/3.47.png)
+>
+> 这个需要后续自己的学习才会使用到
+
+后续的,我会尽量补充完整,因为官方文档依旧不支持上面的东西,导致我需要一定时间做适应
+
+***2024.07 -SouthAki***
