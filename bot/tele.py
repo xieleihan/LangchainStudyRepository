@@ -5,7 +5,8 @@ import json
 import os
 import asyncio
 
-bot = telebot.TeleBot('6155295447:')
+bot = telebot.TeleBot('En4')
+
 
 @bot.message_handler(commands=['start'])
 def start_message(message):
@@ -22,22 +23,12 @@ def echo_all(message):
             aisay = json.loads(response.text)
             if "msg" in aisay:
                 bot.reply_to(message, aisay["msg"]["output"])
-                audio_path = f"{aisay['id']}.mp3"
-                asyncio.run(check_audio(message,audio_path))
+                
             else:
                 bot.reply_to(message, "对不起,我不知道怎么回答你")
     except requests.RequestException as e:
         bot.reply_to(message, "对不起,我不知道怎么回答你")
 
-async def check_audio(message,audio_path):
-    while True:
-        if os.path.exists(audio_path):
-            with open(audio_path, 'rb') as f:
-                bot.send_audio(message.chat.id, f)
-            os.remove(audio_path)
-            break
-        else:
-            print("waiting")
-            await asyncio.sleep(1) #使用asyncio.sleep(1)来等待1秒
+
 
 bot.infinity_polling()

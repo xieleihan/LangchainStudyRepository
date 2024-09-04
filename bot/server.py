@@ -21,10 +21,12 @@ from dotenv import find_dotenv, load_dotenv
 load_dotenv(find_dotenv())
 dashscope_api_key = os.getenv("DASHSCOPE_API_KEY")
 serpapi_api_key = os.getenv("SERPAPI_API_KEY")
+langchain_api_key = os.getenv("LANGCHAIN_API_KEY")
 
+# 问题出在dashscope库中的一个HTTP请求错误处理上。具体来说，requests.exceptions.HTTPError的初始化过程出现问题
 
 os.environ["LANGCHAIN_TRACING_V2"]="true"
-os.environ["LANGCHAIN_API_KEY"]="lsv2_pt_"
+os.environ["LANGCHAIN_API_KEY"]= langchain_api_key
 os.environ["LANGCHAIN_PROJECT"]="shensuanTest"
 
 os.environ["SERPAPI_API_KEY"] = "b575742308f9d"
@@ -41,7 +43,7 @@ app = FastAPI()
 class Master:
     def __init__(self):
         self.chatmodel = ChatTongyi(
-            model="qwen-vl-max",
+            model_name="qwen-vl-max",
             dashscope_api_key = dashscope_api_key,
             temperature=0,
             streaming=True,
@@ -206,32 +208,7 @@ class Master:
         print("情绪判断结果:",result)
         return result
 
-    def background_voice_synthesis(self,text:str,uid:str):
-        #这个函数不需要返回值，只是触发了语音合成
-        asyncio.run(self.get_voice(text,uid))
     
-    async def get_voice(self,text:str,uid:str):
-        print("text2speech",text)
-        print("uid:",uid)
-        #这里是使用微软TTS的代码
-        headers = {
-            "Ocp-Apim-Subscription-Key": msseky,
-            "Content-Type": "application/ssml+xml",
-            "X-Microsoft-OutputFormat": "audio-16khz-32kbitrate-mono-mp3",
-            "User-Agent": "Tomie's Bot"
-        }
-        print("当前陈大师应该的语气是：",self.QingXu)
-        body =f"""<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xmlns:mstts="https://www.w3.org/2001/mstts" xml:lang='zh-CN'>
-            <voice name='zh-CN-YunzeNeural'>
-                <mstts:express-as style="{self.MOODS.get(str(self.QingXu),{"voiceStyle":"default"})["voiceStyle"]}" role="SeniorMale">{text}</mstts:express-as>
-            </voice>
-        </speak>"""
-        #发送请求
-        response = requests.post("https://eastus.tts.speech.microsoft.com/cognitiveservices/v1",headers=headers,data=body.encode("utf-8"))
-        print("response:",response)
-        if response.status_code == 200:
-            with open(f"{uid}.mp3","wb") as f:
-                f.write(response.content)
 
 
 @app.get("/")
@@ -245,6 +222,8 @@ def chat(query:str,background_tasks: BackgroundTasks):
     unique_id = str(uuid.uuid4())#生成唯一的标识符
     background_tasks.add_task(master.background_voice_synthesis,msg["output"],unique_id)
     return {"msg":msg,"id":unique_id}
+
+
 
 @app.post("/add_ursl")
 def add_urls(URL:str):

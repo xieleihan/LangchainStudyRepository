@@ -21,13 +21,19 @@ app = FastAPI(
 
 add_routes(
     app,
-    ChatTongyi(),
+    ChatTongyi(
+        dashscope_api_key = dashscope_api_key,
+        model_name="qwen-vl-max",
+        temperature=0
+    ),
     path="/openai",
 )
 
 
 model = ChatTongyi(
-    dashscope_api_key = dashscope_api_key
+    dashscope_api_key = dashscope_api_key,
+    model_name="qwen-vl-max",
+    temperature=0
 )
 prompt = ChatPromptTemplate.from_template("tell me a joke about {topic}")
 add_routes(
